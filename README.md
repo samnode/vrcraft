@@ -61,6 +61,28 @@ only way to start a run in survival; on desktop `C` swaps at any time.
 - **Survival** — nine empty slots you fill by mining, real stack counts, health,
   hunger, fall damage, hostile zombies after dark, and no flying.
 
+## Crafting
+
+Open the recipe panel with `E` on desktop, or the left grip in VR, where it floats
+in front of you and the right controller points at it. Recipes are ingredient
+lists rather than a 3x3 grid — a grid is miserable to operate with motion
+controllers, so this works like Minecraft's recipe book: you see everything, and
+what you cannot make yet is dimmed with the reason.
+
+The progression is the familiar one. Punch a tree for wood, turn it into planks
+and sticks, build a crafting table, and the tool recipes open up. Mine stone for
+cobblestone, build a furnace, and smelt iron ore into ingots.
+
+Tools matter, exactly as they do in Minecraft:
+
+- **Speed** — the right tool class is several times faster. Stone takes 1.5s with
+  bare hands, 0.6s with a wooden pickaxe, 0.21s with an iron one. The wrong tool
+  gives no bonus at all.
+- **Harvesting** — stone and ores only drop when mined with a good enough
+  pickaxe. Bare-handed stone breaks and yields nothing; iron ore needs at least a
+  stone pickaxe. The game tells you when you are missing the tool.
+- **Combat** — a fist does 1 damage, a wooden sword 5, an iron sword 8.
+
 ## Controls
 
 | Action | VR | Desktop |
@@ -71,6 +93,7 @@ only way to start a run in survival; on desktop `C` swaps at any time.
 | Place / eat | Left trigger or either grip | Right click |
 | Jump | `A` | `Space` |
 | Sprint | Left stick click | `Shift` |
+| Crafting | Left grip | `E` |
 | Pick a block | Point at your wrist panel, pull the trigger | `1`–`9` |
 | Next / previous block | `B` / `X` | Scroll wheel |
 | Toggle flight (creative) | `Y` | `F` |
@@ -93,14 +116,25 @@ is pushed back rather than letting your head pass through the blocks.
 
 - **Terrain** — infinite streamed chunks from layered value noise: hills, beaches,
   oceans, carved cave systems, coal and iron ores, and scattered trees.
-- **Building** — break and place 13 block types, every one of them reachable from
-  the creative palette. Breaking respects hardness, drops the right item (stone
-  yields cobblestone, grass yields dirt), and refuses any placement that would
+- **Building** — 16 placeable blocks, every one reachable from the creative
+  palette, including torches, crafting tables and furnaces. Breaking respects
+  hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside
   terrain, say — and the player is lifted clear rather than stuck.
+- **Crafting** — 19 recipes across wood, stone and iron, gated by whether a
+  crafting table or furnace is within four blocks of you.
 - **Lighting** — per-voxel sky and block light with flood-fill propagation, plus
-  per-vertex ambient occlusion. Glowstone lights caves; the day/night cycle is a
-  single shader uniform, so sunset costs nothing to animate.
+  per-vertex ambient occlusion. The two light types are tinted separately in the
+  shader: sunlight cools and dims towards night while torchlight stays warm, so a
+  lit cave reads as lit rather than merely bright. The day/night cycle is a single
+  uniform, so sunset costs nothing to animate.
+- **Sky** — a gradient dome with a sun and moon that track the hour, a horizon
+  that warms at dawn and dusk, drifting blocky clouds, and stars that fade in.
+  Terrain fog blends to the dome's horizon so the view distance ends in sky
+  rather than a wall of flat colour.
+- **Surfaces** — block textures are randomly rotated per position, which breaks
+  up the obvious tiling across a field of stone or dirt without any extra texture
+  memory. Water shimmers on a travelling wave.
 - **Survival** — health, hunger, fall damage, drowning-free swimming, a 10-minute
   day cycle, pigs that wander and zombies that hunt you after dark and burn at
   dawn. Apples drop from leaves; porkchops drop from pigs.
@@ -122,7 +156,10 @@ src/
   mobs.js           Pig and zombie AI, merged single-draw-call models
   survival.js       Day/night cycle, health, hunger
   inventory.js      Hotbar and stacks
-  blocks.js         Block registry
+  blocks.js         Block and item registry, tool rules
+  crafting.js       Recipes, station requirements, craft and smelt
+  craftui.js        Crafting panel, shared by the desktop overlay and VR
+  sky.js            Sky dome, sun, moon, clouds, stars
   textures.js       Procedurally painted texture atlas (no image files)
   raycast.js        Voxel DDA for aiming
   ui.js             Canvas HUD, shared by the desktop overlay and VR wrist panel
@@ -136,10 +173,10 @@ Quest has a ~13.9 ms frame budget at 72 Hz. The numbers that matter, measured on
 this build:
 
 - Idle frame CPU: **~0.1 ms** — the world is static until something changes.
-- Placing or breaking a block: **~4.4 ms** median, **8.5 ms** worst case.
-- Chunk rebuild: ~2.8 ms meshing + ~2.1 ms lighting.
-- A loaded view at radius 4: ~70 chunk meshes, 25–40 draw calls after frustum
-  culling, ~40–65k triangles.
+- Placing or breaking a block: **~4.9 ms** median, **9.4 ms** worst case.
+- Chunk rebuild: ~2.3 ms meshing + ~1.7 ms lighting.
+- A loaded view at radius 4: ~70 chunk columns, 30–40 draw calls after frustum
+  culling, ~60k triangles. The sky dome, clouds, sun and moon add four more.
 
 Design choices behind those numbers: one mesh per 16×64×16 column rather than per
 sub-chunk, so draw calls stay low; a padded voxel/light cache per rebuild so the

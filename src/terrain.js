@@ -62,7 +62,7 @@ export class Terrain {
   }
 
   disposeMeshes(chunk) {
-    for (const key of ['mesh', 'transparentMesh']) {
+    for (const key of ['mesh', 'waterMesh', 'transparentMesh']) {
       const m = chunk[key];
       if (!m) continue;
       this.group.remove(m);
@@ -111,7 +111,7 @@ export class Terrain {
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       this.ensureLight(this.world.chunks.get(chunkKey(chunk.cx + dx, chunk.cz + dz)));
     }
-    const { opaque, transparent } = buildChunkGeometry(this.world, chunk);
+    const { opaque, water, transparent } = buildChunkGeometry(this.world, chunk);
     chunk.dirty = false;
     this.disposeMeshes(chunk);
 
@@ -124,6 +124,7 @@ export class Terrain {
     };
     // Geometry is already in world space, so the meshes stay at the origin.
     place(opaque, this.materials.opaque, 'mesh');
+    place(water, this.materials.water, 'waterMesh');
     place(transparent, this.materials.transparent, 'transparentMesh');
   }
 

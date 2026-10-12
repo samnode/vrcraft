@@ -52,6 +52,38 @@ export class Inventory {
     return true;
   }
 
+  /** Total of an item across every slot. */
+  countOf(id) {
+    if (this.creative) return Infinity;
+    let n = 0;
+    for (const s of this.survivalSlots) if (s.id === id) n += s.count;
+    return n;
+  }
+
+  /** Remove `count` of an item, draining across slots. */
+  remove(id, count) {
+    if (this.creative) return true;
+    if (this.countOf(id) < count) return false;
+    let left = count;
+    for (const s of this.survivalSlots) {
+      if (left === 0) break;
+      if (s.id !== id) continue;
+      const take = Math.min(s.count, left);
+      s.count -= take;
+      left -= take;
+      if (s.count === 0) s.id = 0;
+    }
+    this.changed();
+    return true;
+  }
+
+  /** The tool currently held, or 0. */
+  heldTool() {
+    const s = this.selectedSlot;
+    if (!s || !s.id) return 0;
+    return block(s.id).tool ? s.id : 0;
+  }
+
   /** Add a mined block, stacking into an existing slot where possible. */
   add(id, count = 1) {
     if (!id || this.creative) return true;

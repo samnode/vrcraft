@@ -27,6 +27,7 @@ export class Chunk {
     this.dirty = true;       // needs a mesh rebuild
     this.lightDirty = true;  // needs a light recompute
     this.mesh = null;
+    this.waterMesh = null;
     this.transparentMesh = null;
     // Tallest non-air voxel per column, used to skip empty sky during meshing.
     this.heights = new Uint8Array(SX * SZ);

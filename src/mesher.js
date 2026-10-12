@@ -1,10 +1,13 @@
 // Turns chunk voxels into geometry. Hidden faces are culled against neighbours
 // (across chunk borders too) and each vertex carries baked sky light, block light
-// and ambient occlusion so the day/night cycle is a single shader uniform.
+// and ambient occlusion, so the day/night cycle is a single shader uniform.
+//
+// Three buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
+// water (shimmers, drawn translucent) and other translucent blocks like glass.
 
 import * as THREE from '../vendor/three/three.module.js';
 import { SX, SY, SZ, idx } from './world.js';
-import { AIR, STONE, block, OPAQUE_LUT } from './blocks.js';
+import { AIR, STONE, block, OPAQUE_LUT, POST_LUT, LIQUID_LUT, VARY_LUT } from './blocks.js';
 import { tileUV } from './textures.js';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
@@ -17,13 +20,27 @@ const FACES = [
   { dir: [0, 0, -1], corners: [[1, 1, 0], [1, 0, 0], [0, 1, 0], [0, 0, 0]], shade: 0.68 },
 ];
 const QUAD_INDICES = [0, 1, 2, 2, 1, 3];
-// UV corner per quad vertex, matching the corner order above.
-const QUAD_UV = [[0, 1], [0, 0], [1, 1], [1, 0]];
+
+// UV corner per quad vertex, and the same set rotated by 90/180/270 degrees.
+// Picking one per block hides the fact that every stone cube shares a texture.
+const QUAD_UV_ROT = [
+  [[0, 1], [0, 0], [1, 1], [1, 0]],
+  [[1, 1], [0, 1], [1, 0], [0, 0]],
+  [[1, 0], [1, 1], [0, 0], [0, 1]],
+  [[0, 0], [1, 0], [0, 1], [1, 1]],
+];
 
 /** Classic voxel corner occlusion: 3 = fully open, 0 = wedged into a corner. */
 function cornerAO(side1, side2, corner) {
   if (side1 && side2) return 0;
   return 3 - (side1 + side2 + corner);
+}
+
+/** Stable per-position hash, used to choose a texture rotation. */
+function hashPos(x, y, z) {
+  let h = x * 374761393 + y * 668265263 + z * 2147483647;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return (h ^ (h >>> 16)) & 3;
 }
 
 /**
@@ -48,10 +65,10 @@ class Buf {
 
   reset() { this.verts = 0; this.indices = 0; }
 
-  /** Grow before a quad if the next four vertices would not fit. */
   ensure() {
     if (this.verts + 4 <= this.capacity) return;
-    const old = { pos: this.pos, uv: this.uv, light: this.light, index: this.index, verts: this.verts, indices: this.indices };
+    const old = { pos: this.pos, uv: this.uv, light: this.light, index: this.index,
+                  verts: this.verts, indices: this.indices };
     this.allocate(this.capacity * 2);
     this.pos.set(old.pos.subarray(0, old.verts * 3));
     this.uv.set(old.uv.subarray(0, old.verts * 2));
@@ -82,9 +99,9 @@ class Buf {
   }
 }
 
-// Reused across every chunk rebuild; meshing is single-threaded and synchronous.
 const opaqueBuf = new Buf();
-const transparentBuf = new Buf();
+const waterBuf = new Buf();
+const glassBuf = new Buf();
 
 // A chunk plus a one-voxel shell of its neighbours, copied into flat arrays once
 // per rebuild. Face culling, ambient occlusion and light sampling all read from
@@ -102,7 +119,6 @@ function fillCache(world, chunk) {
   const { vox, sky, blk } = cache;
   const ox = chunk.cx * SX, oz = chunk.cz * SZ;
 
-  // Interior: straight array copies, no world lookups at all.
   for (let y = 0; y < SY; y++) {
     for (let z = 0; z < SZ; z++) {
       for (let x = 0; x < SX; x++) {
@@ -114,7 +130,6 @@ function fillCache(world, chunk) {
     }
   }
 
-  // Shell: only the faces, edges and corners touching neighbouring chunks.
   const shell = (x, y, z) => {
     const dst = pidx(x, y, z);
     if (y < 0) { vox[dst] = STONE; sky[dst] = 0; blk[dst] = 0; return; }
@@ -135,10 +150,7 @@ function fillCache(world, chunk) {
 
 export function buildChunkGeometry(world, chunk) {
   fillCache(world, chunk);
-
-  const opaque = opaqueBuf, transparent = transparentBuf;
-  opaque.reset();
-  transparent.reset();
+  opaqueBuf.reset(); waterBuf.reset(); glassBuf.reset();
   const ox = chunk.cx * SX, oz = chunk.cz * SZ;
 
   for (let lz = 0; lz < SZ; lz++) {
@@ -148,7 +160,14 @@ export function buildChunkGeometry(world, chunk) {
         const id = chunk.voxels[idx(lx, y, lz)];
         if (id === AIR) continue;
         const def = block(id);
-        const buf = def.blend ? transparent : opaque;
+
+        if (POST_LUT[id]) {
+          emitPost(opaqueBuf, def, lx, y, lz, ox, oz);
+          continue;
+        }
+
+        const buf = LIQUID_LUT[id] ? waterBuf : (def.blend ? glassBuf : opaqueBuf);
+        const rot = VARY_LUT[id] ? hashPos(ox + lx, y, oz + lz) : 0;
 
         for (let f = 0; f < 6; f++) {
           const face = FACES[f];
@@ -158,22 +177,25 @@ export function buildChunkGeometry(world, chunk) {
           // water and glass do not draw internal walls against themselves.
           if (OPAQUE_LUT[nid] || nid === id) continue;
 
-          emitFace(buf, face, lx, y, lz, ox, oz, def.faces[f]);
+          // Only rotate isotropic faces: a rotated grass side would put the
+          // green lip down one edge of the block.
+          const vary = rot && (f === 2 || f === 3 || def.faces[f] === def.faces[2]);
+          emitFace(buf, face, lx, y, lz, ox, oz, def.faces[f], vary ? rot : 0);
         }
       }
     }
   }
 
   return {
-    opaque: opaque.verts ? opaque.toGeometry() : null,
-    transparent: transparent.verts ? transparent.toGeometry() : null,
+    opaque: opaqueBuf.verts ? opaqueBuf.toGeometry() : null,
+    water: waterBuf.verts ? waterBuf.toGeometry() : null,
+    transparent: glassBuf.verts ? glassBuf.toGeometry() : null,
   };
 }
 
-function emitFace(buf, face, lx, y, lz, ox, oz, tileIndex) {
+function emitFace(buf, face, lx, y, lz, ox, oz, tileIndex, rot) {
   const [dx, dy, dz] = face.dir;
   const axis = dx !== 0 ? 0 : (dy !== 0 ? 1 : 2);
-  // The two axes spanning this face, used for both AO lookups and winding.
   const uAxis = axis === 0 ? 1 : 0;
   const vAxis = axis === 2 ? 1 : 2;
 
@@ -181,13 +203,13 @@ function emitFace(buf, face, lx, y, lz, ox, oz, tileIndex) {
   buf.ensure();
   const base = buf.verts;
   const { vox, sky, blk } = cache;
+  const uvSet = QUAD_UV_ROT[rot];
 
-  // The cell just outside this face; AO and light are sampled around it.
   const px = lx + dx, py = y + dy, pz = lz + dz;
 
   for (let i = 0; i < 4; i++) {
     const c = face.corners[i];
-    const uv = QUAD_UV[i];
+    const uv = uvSet[i];
 
     const su = c[uAxis] * 2 - 1;
     const sv = c[vAxis] * 2 - 1;
@@ -201,7 +223,6 @@ function emitFace(buf, face, lx, y, lz, ox, oz, tileIndex) {
     const s1 = OPAQUE_LUT[vox[i1]], s2 = OPAQUE_LUT[vox[i2]], cn = OPAQUE_LUT[vox[i3]];
     const ao = 0.55 + (cornerAO(s1, s2, cn) / 3) * 0.45;
 
-    // Average light over the four cells touching this corner for smooth gradients.
     let skySum = 0, blkSum = 0, n = 0;
     const i0 = pidx(px, py, pz);
     for (const j of [i0, i1, i2, i3]) {
@@ -220,14 +241,41 @@ function emitFace(buf, face, lx, y, lz, ox, oz, tileIndex) {
   buf.quad(base);
 }
 
+/** A slim centred column, for torches. All six faces are always drawn. */
+function emitPost(buf, def, lx, y, lz, ox, oz) {
+  const R = 0.08, TOP = 0.62;
+  const [u0, v0, u1, v1] = tileUV(def.faces[0]);
+  const [s, b] = [cache.sky[pidx(lx, y, lz)] / 15, cache.blk[pidx(lx, y, lz)] / 15];
+  const uvSet = QUAD_UV_ROT[0];
+
+  for (const face of FACES) {
+    buf.ensure();
+    const base = buf.verts;
+    for (let i = 0; i < 4; i++) {
+      const c = face.corners[i];
+      const uv = uvSet[i];
+      buf.vertex(
+        ox + lx + 0.5 + (c[0] - 0.5) * R * 2,
+        y + c[1] * TOP,
+        oz + lz + 0.5 + (c[2] - 0.5) * R * 2,
+        uv[0] ? u1 : u0, uv[1] ? v1 : v0,
+        s, Math.max(b, def.light / 15), face.shade,
+      );
+    }
+    buf.quad(base);
+  }
+}
+
 const VERT = `
   attribute vec3 light;
   varying vec2 vUv;
   varying vec3 vLight;
+  varying vec3 vWorld;
   varying float vDepth;
   void main() {
     vUv = uv;
     vLight = light;
+    vWorld = position;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     vDepth = -mv.z;
     gl_Position = projectionMatrix * mv;
@@ -242,42 +290,60 @@ const FRAG = `
   uniform float uFogNear;
   uniform float uFogFar;
   uniform float uAlphaTest;
+  uniform float uTime;
+  uniform float uWater;
   varying vec2 vUv;
   varying vec3 vLight;
+  varying vec3 vWorld;
   varying float vDepth;
+
   void main() {
     vec4 tex = texture2D(uAtlas, vUv);
     if (tex.a < uAlphaTest) discard;
-    // Sky light dims with the time of day; block light does not. A small floor
-    // keeps unlit caves readable instead of pitch black.
-    float lum = max(max(vLight.x * uDayLight, vLight.y), 0.05);
+
+    // Sunlight cools and dims towards night; torchlight stays warm regardless.
+    // Keeping the two tinted separately is what makes a lit cave read as lit.
+    vec3 skyTint = mix(vec3(0.42, 0.52, 0.80), vec3(1.0), uDayLight);
+    vec3 warm = vec3(1.0, 0.76, 0.46);
+    vec3 lum = skyTint * (vLight.x * uDayLight) + warm * vLight.y;
+    lum = clamp(lum, vec3(0.05), vec3(1.25));
+
     vec3 color = tex.rgb * lum * vLight.z;
+
+    // Water shimmers on a slow travelling wave rather than scrolling its UVs,
+    // which would sample neighbouring tiles out of the atlas.
+    if (uWater > 0.5) {
+      float w = sin(vWorld.x * 0.7 + uTime * 1.3) * sin(vWorld.z * 0.6 + uTime * 0.9);
+      color += vec3(0.05, 0.08, 0.11) * w;
+    }
+
     float fog = clamp((vDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
     gl_FragColor = vec4(mix(color, uFogColor, fog), tex.a);
   }
 `;
 
 export function createTerrainMaterials(atlas, fogColor, fogNear, fogFar) {
-  const uniforms = {
+  const shared = {
     uAtlas: { value: atlas },
     uDayLight: { value: 1 },
     uFogColor: { value: new THREE.Color(fogColor) },
     uFogNear: { value: fogNear },
     uFogFar: { value: fogFar },
-    uAlphaTest: { value: 0.5 },
+    uTime: { value: 0 },
   };
 
-  const opaque = new THREE.ShaderMaterial({
-    uniforms, vertexShader: VERT, fragmentShader: FRAG,
+  const make = (alphaTest, water, opts = {}) => new THREE.ShaderMaterial({
+    // Spread shares the uniform objects, so one day/night write covers them all.
+    uniforms: { ...shared, uAlphaTest: { value: alphaTest }, uWater: { value: water } },
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    ...opts,
   });
 
-  // Transparent blocks share the uniform objects so one day/night write covers both.
-  const transparent = new THREE.ShaderMaterial({
-    uniforms: { ...uniforms, uAlphaTest: { value: 0.02 } },
-    vertexShader: VERT, fragmentShader: FRAG,
-    transparent: true,
-    depthWrite: false,
-  });
-
-  return { opaque, transparent, uniforms };
+  return {
+    opaque: make(0.5, 0),
+    water: make(0.02, 1, { transparent: true, depthWrite: false }),
+    transparent: make(0.02, 0, { transparent: true, depthWrite: false }),
+    uniforms: shared,
+  };
 }

@@ -3,7 +3,10 @@
 
 import * as THREE from '../vendor/three/three.module.js';
 import { raycastVoxel } from './raycast.js';
-import { AIR, LEAVES, APPLE, block, isItem, isLiquid } from './blocks.js';
+import {
+  AIR, LEAVES, APPLE, block, isItem, isLiquid, isSolid,
+  miningTime, canHarvest, attackDamage,
+} from './blocks.js';
 import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js';
 import { sfx } from './sfx.js';
 
@@ -62,7 +65,8 @@ export class Interactor {
       this.setTarget(null);
       if (input.breaking && this.hitTimer === 0) {
         this.hitTimer = HIT_COOLDOWN;
-        this.mobs.hurt(mobHit.mob, 4);
+        // A sword hits far harder than a fist, which is the point of making one.
+        this.mobs.hurt(mobHit.mob, attackDamage(this.inventory.heldTool()));
         this.particles.burst(mobHit.mob.center, 0xcc3333, 8, 2.2);
         sfx.hit();
       }
@@ -104,7 +108,9 @@ export class Interactor {
   mine(dt, hit) {
     const def = block(hit.id);
     if (def.hardness === null) return;                 // bedrock-like, water
-    this.progress += dt / Math.max(0.05, def.hardness);
+    // The right tool is several times faster; the wrong one is bare-hand speed.
+    const seconds = miningTime(hit.id, this.inventory.heldTool());
+    this.progress += dt / Math.max(0.05, seconds);
 
     if (this.digSoundTimer === 0) {
       this.digSoundTimer = 0.14;
@@ -118,6 +124,7 @@ export class Interactor {
 
   breakBlock(hit) {
     const def = block(hit.id);
+    const harvestable = canHarvest(hit.id, this.inventory.heldTool());
     if (!this.world.set(hit.x, hit.y, hit.z, AIR)) return;
 
     const center = new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
@@ -127,7 +134,15 @@ export class Interactor {
     // Leaves occasionally yield an apple, which is the main food source.
     let drop = def.drop;
     if (hit.id === LEAVES) drop = Math.random() < 0.12 ? APPLE : null;
-    if (drop) this.collect(drop, 1);
+
+    if (!harvestable) {
+      // Mined without the required tool: the block breaks but yields nothing.
+      drop = null;
+      if (this.onNotify && !this.inventory.creative) {
+        this.onNotify(`Need a better pickaxe for ${def.name}`);
+      }
+    }
+    if (drop) this.collect(drop, def.dropCount ?? 1);
 
     this.setTarget(null);
   }
@@ -159,7 +174,8 @@ export class Interactor {
     const x = hit.x + hit.normal[0], y = hit.y + hit.normal[1], z = hit.z + hit.normal[2];
     const existing = this.world.get(x, y, z);
     if (existing !== AIR && !isLiquid(existing)) return;
-    if (this.overlapsPlayer(x, y, z)) return;          // never seal the player in
+    // Only solid blocks can seal the player in; a torch in your own square is fine.
+    if (isSolid(id) && this.overlapsPlayer(x, y, z)) return;
 
     if (!this.world.set(x, y, z, id)) return;
     this.inventory.consumeSelected();
@@ -181,6 +197,7 @@ export class Interactor {
       1: 0x6f9e52, 2: 0x8a6a48, 3: 0x808084, 4: 0xd9ce96, 5: 0x6c5230,
       6: 0x3f7c34, 7: 0xa8844f, 8: 0x6c6c70, 10: 0xd6ecf4, 11: 0x9a4e3e,
       12: 0xe2c46e, 13: 0x303034, 14: 0xcea684,
+      17: 0xa8844f, 18: 0x707074, 19: 0xffd166,
     };
     return COLORS[id] ?? 0x9a9a9a;
   }

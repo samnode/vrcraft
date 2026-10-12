@@ -5,8 +5,8 @@ import * as THREE from '../vendor/three/three.module.js';
 import { TILES } from './blocks.js';
 
 export const TILE_PX = 32;
-export const ATLAS_COLS = 4;
-export const ATLAS_ROWS = 5;
+export const ATLAS_COLS = 7;
+export const ATLAS_ROWS = 6;
 
 // Deterministic per-pixel jitter so tiles look grainy rather than flat.
 function px(x, y, salt) {
@@ -179,7 +179,139 @@ const painters = {
     ctx.fillStyle = '#efe4d2';
     ctx.fillRect(ox + 5, oy + TILE_PX / 2 - 2, 7, 5);   // bone
   },
+  table_top(ctx, ox, oy) {
+    painters.planks(ctx, ox, oy);
+    ctx.strokeStyle = 'rgba(70,52,30,0.8)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox + 4, oy + 4, TILE_PX - 8, TILE_PX - 8);
+    ctx.beginPath();
+    ctx.moveTo(ox + 4, oy + TILE_PX / 2); ctx.lineTo(ox + TILE_PX - 4, oy + TILE_PX / 2);
+    ctx.moveTo(ox + TILE_PX / 2, oy + 4); ctx.lineTo(ox + TILE_PX / 2, oy + TILE_PX - 4);
+    ctx.stroke();
+  },
+  table_side(ctx, ox, oy) {
+    painters.planks(ctx, ox, oy);
+    grainy(ctx, ox, oy + TILE_PX - 10, [120, 92, 56], 0.14, 40);
+    ctx.fillStyle = 'rgba(70,52,30,0.55)';
+    ctx.fillRect(ox, oy + TILE_PX - 11, TILE_PX, 2);
+  },
+  furnace_side(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [112, 112, 116], 0.14, 41);
+    blobs(ctx, ox, oy, 'rgba(92,92,96,0.5)', 10, 3, 42);
+  },
+  furnace_front(ctx, ox, oy) {
+    painters.furnace_side(ctx, ox, oy);
+    // Dark mouth with a lit fire inside.
+    ctx.fillStyle = '#2a2a2e';
+    ctx.fillRect(ox + 6, oy + 13, TILE_PX - 12, TILE_PX - 18);
+    const grad = ctx.createLinearGradient(0, oy + TILE_PX - 5, 0, oy + 15);
+    grad.addColorStop(0, '#ffd166');
+    grad.addColorStop(1, 'rgba(226,88,34,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(ox + 8, oy + 15, TILE_PX - 16, TILE_PX - 21);
+    ctx.fillStyle = '#5a5a5e';
+    ctx.fillRect(ox + 5, oy + 8, TILE_PX - 10, 3);
+  },
+  torch(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    const c = TILE_PX / 2;
+    ctx.fillStyle = '#6b4f2a';                      // handle
+    ctx.fillRect(ox + c - 3, oy + 10, 6, TILE_PX - 10);
+    ctx.fillStyle = '#ffd166';                      // flame
+    ctx.fillRect(ox + c - 4, oy + 3, 8, 8);
+    ctx.fillStyle = '#fff3c4';
+    ctx.fillRect(ox + c - 2, oy + 5, 4, 4);
+  },
+  stick(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.save();
+    ctx.translate(ox + TILE_PX / 2, oy + TILE_PX / 2);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = '#8a6636';
+    ctx.fillRect(-3, -12, 6, 24);
+    ctx.fillStyle = '#6b4f2a';
+    ctx.fillRect(-3, -12, 2, 24);
+    ctx.restore();
+  },
+  coal(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.fillStyle = '#26262a';
+    ctx.beginPath();
+    ctx.ellipse(ox + TILE_PX / 2, oy + TILE_PX / 2, 10, 9, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(90,90,98,0.8)';
+    ctx.fillRect(ox + 11, oy + 12, 4, 3);
+  },
+  iron_ingot(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.fillStyle = '#d8d8dc';
+    ctx.beginPath();
+    ctx.moveTo(ox + 7, oy + 20); ctx.lineTo(ox + 10, oy + 12);
+    ctx.lineTo(ox + 22, oy + 12); ctx.lineTo(ox + 25, oy + 20);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillRect(ox + 11, oy + 14, 10, 2);
+  },
 };
+
+// Tools share one painter: a shaft plus a head whose silhouette depends on the
+// kind and whose colour depends on the material tier.
+const TOOL_HEADS = {
+  pick: (ctx, x, y, c) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y + 2); ctx.quadraticCurveTo(x, y - 8, x + 11, y + 2);
+    ctx.lineTo(x + 8, y + 6); ctx.quadraticCurveTo(x, y - 2, x - 8, y + 6);
+    ctx.closePath(); ctx.fill();
+  },
+  axe: (ctx, x, y, c) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y - 7); ctx.lineTo(x + 9, y - 4);
+    ctx.lineTo(x + 9, y + 6); ctx.lineTo(x - 2, y + 8);
+    ctx.closePath(); ctx.fill();
+  },
+  shovel: (ctx, x, y, c) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y - 5); ctx.lineTo(x + 6, y - 5);
+    ctx.lineTo(x + 5, y + 7); ctx.lineTo(x - 5, y + 7);
+    ctx.closePath(); ctx.fill();
+  },
+  sword: (ctx, x, y, c) => {
+    ctx.fillStyle = c;
+    ctx.fillRect(x - 3, y - 10, 6, 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillRect(x - 1, y - 9, 2, 17);
+  },
+};
+
+const TOOL_COLORS = { wood: '#a8844f', stone: '#8e8e94', iron: '#dcdce2' };
+
+function paintTool(kind, material) {
+  return (ctx, ox, oy) => {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    const c = TILE_PX / 2;
+    ctx.save();
+    ctx.translate(ox + c, oy + c);
+    ctx.rotate(Math.PI / 4);
+    // Handle runs corner to corner; swords are all blade so they skip the head.
+    ctx.fillStyle = '#7a5a30';
+    ctx.fillRect(-2.5, kind === 'sword' ? 2 : -2, 5, kind === 'sword' ? 13 : 16);
+    if (kind === 'sword') {
+      ctx.fillStyle = '#5c431f';
+      ctx.fillRect(-6, 0, 12, 3);                   // crossguard
+    }
+    TOOL_HEADS[kind](ctx, 0, kind === 'sword' ? -4 : -7, TOOL_COLORS[material]);
+    ctx.restore();
+  };
+}
+
+for (const kind of ['pick', 'axe', 'shovel', 'sword']) {
+  for (const material of ['wood', 'stone', 'iron']) {
+    painters[`${kind}_${material}`] = paintTool(kind, material);
+  }
+}
 
 export function buildAtlas() {
   const canvas = document.createElement('canvas');

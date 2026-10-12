@@ -13,6 +13,9 @@ import { Mobs } from './mobs.js';
 import { Interactor } from './interact.js';
 import { Particles } from './fx.js';
 import { Hud, formatClock } from './ui.js';
+import { CraftUI } from './craftui.js';
+import { RECIPES, craft, nearbyStations } from './crafting.js';
+import { Sky } from './sky.js';
 import { block } from './blocks.js';
 import { sfx } from './sfx.js';
 import { SEA_LEVEL } from './world.js';
@@ -23,7 +26,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 5 — smooth turn';
+const BUILD = 'build 6 — crafting';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -58,8 +61,7 @@ scene.add(ambient);
 const atlas = buildAtlas();
 const terrain = new Terrain(scene, atlas.texture, { radius: VIEW_CHUNKS, fogColor: 0x9fc4e8 });
 
-const stars = makeStars();
-scene.add(stars);
+const sky = new Sky(scene);
 
 // ---------------------------------------------------------------- game state
 
@@ -71,6 +73,12 @@ const mobs = new Mobs(scene, terrain.world, survival);
 const interactor = new Interactor(scene, terrain, player, inventory, survival, mobs, particles);
 const hud = new Hud(atlas.canvas);
 hud.attachToDom(document.body);
+
+const craftUI = new CraftUI(atlas.canvas);
+craftUI.attachToDom(document.body);
+scene.add(craftUI.panel);
+let stations = { table: false, furnace: false };
+let stationTimer = 0;
 
 player.onFallDamage = (amount) => {
   survival.damage(amount, 'the fall');
@@ -205,7 +213,8 @@ function gatherVrInput(dt) {
     if (Math.abs(ax) > 0.15) input.move.x = ax;
     if (Math.abs(ay) > 0.15) input.move.z = -ay;
     input.sprint = (lp.buttons[3]?.pressed) ?? false;         // stick click
-    input.placing = pressed(lp, 0) || pressed(lp, 1);
+    input.placing = pressed(lp, 0);
+    if (pressedOnce('craft', pressed(lp, 1))) setCraftingOpen(!craftUI.open);
     if (pressedOnce('x', pressed(lp, 4))) inventory.cycle(-1);
     if (pressedOnce('y', pressed(lp, 5))) toggleFlight();
   }
@@ -258,6 +267,39 @@ function gatherDesktopInput() {
   return input;
 }
 
+function setCraftingOpen(on) {
+  if (craftUI.open === on) return;
+  craftUI.open = on;
+  refreshStations();
+
+  if (renderer.xr.isPresenting) {
+    craftUI.panel.visible = on;
+    if (on) craftUI.positionInFront(camera);
+    craftUI.canvas.style.display = 'none';
+  } else {
+    craftUI.setOpen(on);
+    crosshair.style.display = on ? 'none' : 'block';
+    // Mouse look owns the cursor, so the pointer lock has to go to click a recipe.
+    if (on) document.exitPointerLock();
+    else renderer.domElement.requestPointerLock()?.catch?.(() => {});
+  }
+}
+
+function refreshStations() {
+  stations = nearbyStations(terrain.world, player.position, 4);
+}
+
+function tryCraft(index) {
+  const recipe = RECIPES[index];
+  if (!recipe) return;
+  if (craft(recipe, inventory, stations)) {
+    sfx.pickup();
+    survival.note(`Crafted ${block(recipe.out).name}`);
+  } else {
+    sfx.hit();
+  }
+}
+
 function toggleFlight() {
   // Flight is a creative-mode tool; survival is meant to be walked.
   if (survival.enabled) { survival.note('No flying in survival'); return; }
@@ -283,12 +325,22 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') e.preventDefault();
   keys.add(e.code);
   if (e.code === 'KeyF') toggleFlight();
+  if (e.code === 'KeyE') setCraftingOpen(!craftUI.open);
   if (e.code === 'KeyC') setCreative(!inventory.creative);
-  if (e.code === 'Escape') mouse.locked = false;
+  if (e.code === 'Escape') {
+    if (craftUI.open) setCraftingOpen(false);
+    mouse.locked = false;
+  }
   const digit = e.code.match(/^Digit([1-9])$/);
   if (digit) inventory.select(Number(digit[1]) - 1);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
+
+craftUI.canvas.addEventListener('mousedown', (e) => {
+  const i = craftUI.indexAtClientPoint(e.clientX, e.clientY);
+  if (i >= 0) tryCraft(i);
+  e.preventDefault();
+});
 
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (!mouse.locked) return;
@@ -307,10 +359,16 @@ window.addEventListener('wheel', (e) => {
 document.addEventListener('pointerlockchange', () => {
   mouse.locked = document.pointerLockElement === renderer.domElement;
   if (!mouse.locked) mouse.breaking = mouse.placing = false;
-  if (!renderer.xr.isPresenting) showEntry(!mouse.locked);
+  // Opening the crafting panel deliberately drops the lock so the cursor works;
+  // that must not be mistaken for the player quitting back to the start screen.
+  if (!renderer.xr.isPresenting) showEntry(!mouse.locked && !craftUI.open);
 });
 
 document.addEventListener('mousemove', (e) => {
+  if (craftUI.open && !renderer.xr.isPresenting) {
+    craftUI.hoverIndex = craftUI.indexAtClientPoint(e.clientX, e.clientY);
+    return;
+  }
   if (!mouse.locked) return;
   mouse.yaw -= e.movementX * 0.0022;
   mouse.pitch -= e.movementY * 0.0022;
@@ -363,7 +421,8 @@ function showEntry(on) {
   entry.style.display = on ? 'flex' : 'none';
   panel.style.display = on ? '' : 'none';
   hud.setDomVisible(!on);
-  crosshair.style.display = on ? 'none' : 'block';
+  // The crosshair belongs to aiming, not to menus.
+  crosshair.style.display = (on || craftUI.open) ? 'none' : 'block';
 }
 
 hud.setDomVisible(false);
@@ -407,6 +466,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 
 renderer.xr.addEventListener('sessionend', () => {
   terrain.budgetMs = 6;
+  setCraftingOpen(false);
   showEntry(true);
   hud.panel.visible = false;
 });
@@ -426,6 +486,7 @@ const pointer = {
   raycaster: new THREE.Raycaster(),
   hoverSlot: -1,
   pressed: false,
+  craftPressed: false,
 };
 
 const rayOrigin = new THREE.Vector3();
@@ -490,6 +551,15 @@ function frame(dt) {
   const overPanel = inVr ? updatePanelPointer(input) : -1;
   if (overPanel >= 0) input.breaking = false;
 
+  if (craftUI.open) {
+    // The crafting panel takes the trigger while it is up.
+    if (inVr && updateCraftPointer(input)) input.breaking = false;
+    input.placing = false;
+    stationTimer -= dt;
+    if (stationTimer <= 0) { stationTimer = 0.4; refreshStations(); }
+    craftUI.draw(inventory, stations);
+  }
+
   survival.update(dt, player);
   survival.tickMessages(dt);
   player.update(dt, input);
@@ -498,7 +568,7 @@ function frame(dt) {
   interactor.update(dt, active ? aimRay() : null, input);
   particles.update(dt);
   refreshHeldCube();
-  updateSky();
+  updateSky(dt);
 
   hudTimer -= dt;
   if (hudTimer <= 0) {
@@ -551,42 +621,43 @@ function updatePanelPointer(input) {
   return slot;
 }
 
-function updateSky() {
+/** Points the right controller at the floating crafting panel in VR. */
+function updateCraftPointer(input) {
+  craftUI.hoverIndex = -1;
+  const right = controllerByHand('right');
+  if (!right || !craftUI.panel.visible) return false;
+
+  right.getWorldPosition(rayOrigin);
+  rayDirection.copy(forward).applyQuaternion(right.getWorldQuaternion(new THREE.Quaternion()));
+  pointer.raycaster.set(rayOrigin, rayDirection.normalize());
+  pointer.raycaster.far = 4;
+
+  craftUI.panel.updateWorldMatrix(true, false);
+  const hit = pointer.raycaster.intersectObject(craftUI.panel, false)[0];
+  if (!hit || !hit.uv) { pointer.craftPressed = input.breaking; return false; }
+
+  const index = craftUI.indexAtUV(hit.uv.x, hit.uv.y);
+  craftUI.hoverIndex = index;
+  if (index >= 0 && input.breaking && !pointer.craftPressed) tryCraft(index);
+  pointer.craftPressed = input.breaking;
+  return true;
+}
+
+function updateSky(dt) {
   const light = survival.daylight;
   terrain.uniforms.uDayLight.value = light;
-  terrain.uniforms.uFogColor.value.copy(survival.skyColor);
-  scene.background = survival.skyColor;
+  terrain.uniforms.uTime.value += dt;
+
+  // The sky dome owns the palette now; fog blends the terrain into its horizon
+  // so the view distance ends in sky rather than a visible wall of colour.
+  const horizon = sky.update(survival.time, light, player.position, dt);
+  terrain.uniforms.uFogColor.value.copy(horizon);
+  scene.background = null;                    // the dome covers the whole view
 
   sun.intensity = 0.35 + light * 1.35;
   ambient.intensity = 0.25 + light * 0.6;
-  // Swing the light across the sky so mobs and held blocks shade with the cycle.
   const angle = survival.time * Math.PI * 2;
   sun.position.set(Math.cos(angle) * 0.6, Math.max(0.15, Math.sin(angle)), 0.35);
-
-  stars.material.opacity = THREE.MathUtils.clamp(1 - light * 2.4, 0, 0.9);
-  stars.visible = stars.material.opacity > 0.02;
-  stars.position.copy(player.position);
-}
-
-function makeStars() {
-  const count = 420;
-  const pos = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    // Even scatter over the upper hemisphere of a large sphere.
-    const u = Math.random(), v = Math.random() * 0.85 + 0.15;
-    const theta = u * Math.PI * 2, phi = Math.acos(v);
-    const r = 180;
-    pos[i * 3] = Math.sin(phi) * Math.cos(theta) * r;
-    pos[i * 3 + 1] = Math.cos(phi) * r;
-    pos[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * r;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const points = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: 0xffffff, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false,
-  }));
-  points.frustumCulled = false;
-  return points;
 }
 
 renderer.setAnimationLoop(render);
@@ -594,7 +665,8 @@ renderer.setAnimationLoop(render);
 // Debug handle: handy from the browser console, and used by the test harness.
 window.VRCRAFT = {
   renderer, scene, camera, rig, terrain, player, inventory, survival, mobs,
-  interactor, particles, hud, controllers, BUILD,
+  interactor, particles, hud, craftUI, sky, controllers, BUILD,
+  setCraftingOpen, tryCraft, get stations() { return stations; },
   // Lets the VR input mapping be exercised without a headset: hand it a fake
   // gamepad through controllers[i].userData and call this directly.
   vrInput: (dt) => gatherVrInput(dt),
