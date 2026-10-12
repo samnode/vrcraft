@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>VRCraft</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1026; }
+  body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; color: #eef3ff; }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; width: 18px; height: 18px;
+    transform: translate(-50%, -50%); pointer-events: none; z-index: 4; display: none;
+    mix-blend-mode: difference;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: #fff;
+  }
+  #crosshair::before { left: 8px; top: 0; width: 2px; height: 18px; }
+  #crosshair::after { left: 0; top: 8px; width: 18px; height: 2px; }
+
+  #overlay {
+    position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+    background: radial-gradient(circle at 50% 35%, #1d3357 0%, #0a1026 70%);
+    padding: 24px; text-align: center;
+  }
+  #overlay .card { max-width: 640px; }
+  h1 { margin: 0 0 6px; font-size: clamp(32px, 7vw, 54px); letter-spacing: -0.02em; }
+  .tagline { margin: 0 0 26px; color: #9db2d8; font-size: 16px; }
+  .buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+  button {
+    font: inherit; font-weight: 600; padding: 13px 26px; border-radius: 10px;
+    border: 1px solid #ffffff2e; background: #2c4f8f; color: #fff; cursor: pointer;
+  }
+  button.secondary { background: #ffffff12; }
+  button:hover { filter: brightness(1.12); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 22px; text-align: left; font-size: 14px; }
+  .keys div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #ffffff14; padding: 5px 0; color: #c3d2ee; }
+  .keys b { color: #fff; font-weight: 600; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: #8fa6cf; margin: 22px 0 6px; }
+  #status { margin-top: 18px; font-size: 13px; color: #8fa6cf; min-height: 18px; }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="crosshair"></div>
+
+  <div id="overlay">
+    <div class="card">
+      <h1>VRCraft</h1>
+      <p class="tagline">A voxel sandbox for WebXR. Build, mine, and survive the night.</p>
+
+      <div class="buttons">
+        <span id="vrbutton-slot"></span>
+        <button id="desktop" class="secondary">Play in browser</button>
+      </div>
+
+      <h2>In VR</h2>
+      <div class="keys">
+        <div><span>Move</span><b>Left stick</b></div>
+        <div><span>Snap turn</span><b>Right stick</b></div>
+        <div><span>Break / attack</span><b>Right trigger</b></div>
+        <div><span>Place / eat</span><b>Left trigger or grip</b></div>
+        <div><span>Jump</span><b>A</b></div>
+        <div><span>Next item</span><b>B</b></div>
+        <div><span>Previous item</span><b>X</b></div>
+        <div><span>Toggle flight</span><b>Y</b></div>
+        <div><span>Fly up / down</span><b>A / right stick</b></div>
+        <div><span>Sprint</span><b>Left stick click</b></div>
+      </div>
+
+      <h2>On desktop</h2>
+      <div class="keys">
+        <div><span>Move</span><b>W A S D</b></div>
+        <div><span>Look</span><b>Mouse</b></div>
+        <div><span>Break</span><b>Left click</b></div>
+        <div><span>Place / eat</span><b>Right click</b></div>
+        <div><span>Jump / sprint</span><b>Space / Shift</b></div>
+        <div><span>Select item</span><b>1–9 or scroll</b></div>
+        <div><span>Toggle flight</span><b>F</b></div>
+        <div><span>Creative / survival</span><b>C</b></div>
+        <div><span>Fly up / down</span><b>Space / Ctrl</b></div>
+      </div>
+
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

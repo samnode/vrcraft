@@ -1,0 +1,187 @@
+// Breaking, placing and hitting. Drives one shared highlight box; the caller
+// supplies a ray per frame (gaze on desktop, controller aim in VR).
+
+import * as THREE from '../vendor/three/three.module.js';
+import { raycastVoxel } from './raycast.js';
+import { AIR, LEAVES, APPLE, block, isItem, isLiquid } from './blocks.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js';
+import { sfx } from './sfx.js';
+
+const REACH = 6;
+const PLACE_COOLDOWN = 0.18;
+const HIT_COOLDOWN = 0.45;
+
+export class Interactor {
+  constructor(scene, terrain, player, inventory, survival, mobs, particles) {
+    this.terrain = terrain;
+    this.world = terrain.world;
+    this.player = player;
+    this.inventory = inventory;
+    this.survival = survival;
+    this.mobs = mobs;
+    this.particles = particles;
+
+    this.target = null;             // {x,y,z,id,normal}
+    this.progress = 0;
+    this.placeTimer = 0;
+    this.hitTimer = 0;
+    this.digSoundTimer = 0;
+
+    const box = new THREE.BoxGeometry(1.002, 1.002, 1.002);
+    this.outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(box),
+      new THREE.LineBasicMaterial({ color: 0x0b0b0b, transparent: true, opacity: 0.85 }),
+    );
+    this.outline.visible = false;
+    this.outline.frustumCulled = false;
+    scene.add(this.outline);
+
+    // Fills in as mining progresses, standing in for a crack overlay.
+    this.crack = new THREE.Mesh(
+      new THREE.BoxGeometry(1.01, 1.01, 1.01),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 }),
+    );
+    this.crack.visible = false;
+    this.crack.frustumCulled = false;
+    scene.add(this.crack);
+
+    this.onNotify = null;
+  }
+
+  /** ray: {origin: Vector3, direction: Vector3} already normalised. */
+  update(dt, ray, input) {
+    this.placeTimer = Math.max(0, this.placeTimer - dt);
+    this.hitTimer = Math.max(0, this.hitTimer - dt);
+    this.digSoundTimer = Math.max(0, this.digSoundTimer - dt);
+
+    const hit = ray ? raycastVoxel(this.world, ray.origin, ray.direction, REACH) : null;
+    const mobHit = ray ? this.mobs.pick(ray.origin, ray.direction, 4) : null;
+
+    // A mob in front of the block takes the swing instead.
+    if (mobHit && (!hit || mobHit.distance < hit.distance)) {
+      this.setTarget(null);
+      if (input.breaking && this.hitTimer === 0) {
+        this.hitTimer = HIT_COOLDOWN;
+        this.mobs.hurt(mobHit.mob, 4);
+        this.particles.burst(mobHit.mob.center, 0xcc3333, 8, 2.2);
+        sfx.hit();
+      }
+      return;
+    }
+
+    if (!hit) { this.setTarget(null); return; }
+
+    if (!this.target || this.target.x !== hit.x || this.target.y !== hit.y || this.target.z !== hit.z) {
+      this.setTarget(hit);
+      this.progress = 0;
+    }
+
+    if (input.breaking) this.mine(dt, hit);
+    else this.progress = Math.max(0, this.progress - dt * 2);
+
+    if (input.placing && this.placeTimer === 0) this.place(hit);
+
+    this.refreshVisuals();
+  }
+
+  setTarget(hit) {
+    this.target = hit;
+    const visible = !!hit;
+    this.outline.visible = visible;
+    this.crack.visible = visible;
+    if (visible) {
+      this.outline.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+      this.crack.position.copy(this.outline.position);
+    } else {
+      this.progress = 0;
+    }
+  }
+
+  refreshVisuals() {
+    this.crack.material.opacity = Math.min(0.55, this.progress * 0.55);
+  }
+
+  mine(dt, hit) {
+    const def = block(hit.id);
+    if (def.hardness === null) return;                 // bedrock-like, water
+    this.progress += dt / Math.max(0.05, def.hardness);
+
+    if (this.digSoundTimer === 0) {
+      this.digSoundTimer = 0.14;
+      sfx.dig();
+    }
+
+    if (this.progress < 1) return;
+    this.progress = 0;
+    this.breakBlock(hit);
+  }
+
+  breakBlock(hit) {
+    const def = block(hit.id);
+    if (!this.world.set(hit.x, hit.y, hit.z, AIR)) return;
+
+    const center = new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+    this.particles.burst(center, this.particleColor(hit.id), 16, 3.0);
+    sfx.break();
+
+    // Leaves occasionally yield an apple, which is the main food source.
+    let drop = def.drop;
+    if (hit.id === LEAVES) drop = Math.random() < 0.12 ? APPLE : null;
+    if (drop) this.collect(drop, 1);
+
+    this.setTarget(null);
+  }
+
+  collect(id, count) {
+    if (this.inventory.creative) return;
+    if (this.inventory.add(id, count)) {
+      sfx.pickup();
+      if (this.onNotify) this.onNotify(`+${count} ${block(id).name}`);
+    } else if (this.onNotify) {
+      this.onNotify('Inventory full');
+    }
+  }
+
+  place(hit) {
+    const id = this.inventory.placeable();
+    if (!id) return;
+
+    if (isItem(id)) {                                  // food is eaten, not placed
+      if (this.survival.enabled && this.survival.eat(id)) {
+        this.inventory.consumeSelected();
+        this.placeTimer = 0.5;
+        sfx.eat();
+        if (this.onNotify) this.onNotify(`Ate ${block(id).name}`);
+      }
+      return;
+    }
+
+    const x = hit.x + hit.normal[0], y = hit.y + hit.normal[1], z = hit.z + hit.normal[2];
+    const existing = this.world.get(x, y, z);
+    if (existing !== AIR && !isLiquid(existing)) return;
+    if (this.overlapsPlayer(x, y, z)) return;          // never seal the player in
+
+    if (!this.world.set(x, y, z, id)) return;
+    this.inventory.consumeSelected();
+    this.placeTimer = PLACE_COOLDOWN;
+    sfx.place();
+  }
+
+  overlapsPlayer(x, y, z) {
+    const h = PLAYER_WIDTH / 2 + 0.02;
+    const p = this.player.position;
+    return x + 1 > p.x - h && x < p.x + h
+        && z + 1 > p.z - h && z < p.z + h
+        && y + 1 > p.y && y < p.y + PLAYER_HEIGHT;
+  }
+
+  particleColor(id) {
+    // Approximate tints so debris reads as the right material without sampling.
+    const COLORS = {
+      1: 0x6f9e52, 2: 0x8a6a48, 3: 0x808084, 4: 0xd9ce96, 5: 0x6c5230,
+      6: 0x3f7c34, 7: 0xa8844f, 8: 0x6c6c70, 10: 0xd6ecf4, 11: 0x9a4e3e,
+      12: 0xe2c46e, 13: 0x303034, 14: 0xcea684,
+    };
+    return COLORS[id] ?? 0x9a9a9a;
+  }
+}
