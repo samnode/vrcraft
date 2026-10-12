@@ -20,8 +20,7 @@ import { SEA_LEVEL } from './world.js';
 const SNAP_TURN = THREE.MathUtils.degToRad(30);
 const VIEW_CHUNKS = 4;
 
-const stage = document.getElementById('stage');
-const overlay = document.getElementById('overlay');
+const panel = document.getElementById('panel');
 const statusEl = document.getElementById('status');
 const crosshair = document.getElementById('crosshair');
 
@@ -33,7 +32,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
-stage.appendChild(renderer.domElement);
+document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 400);
@@ -292,11 +291,8 @@ window.addEventListener('wheel', (e) => {
 
 document.addEventListener('pointerlockchange', () => {
   mouse.locked = document.pointerLockElement === renderer.domElement;
-  crosshair.style.display = mouse.locked ? 'block' : 'none';
-  if (!mouse.locked && !renderer.xr.isPresenting) {
-    overlay.style.display = 'grid';
-    mouse.breaking = mouse.placing = false;
-  }
+  if (!mouse.locked) mouse.breaking = mouse.placing = false;
+  if (!renderer.xr.isPresenting) showEntry(!mouse.locked);
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -308,36 +304,59 @@ document.addEventListener('mousemove', (e) => {
 
 // ---------------------------------------------------------------- session UI
 
+// The world renders live from the first frame; entering is a single button
+// click rather than a full-screen gate. Both buttons use three's VRButton look.
+function stylizeEntryButton(el) {
+  el.style.border = '1px solid #fff';
+  el.style.borderRadius = '4px';
+  el.style.background = 'rgba(0,0,0,0.1)';
+  el.style.color = '#fff';
+  el.style.font = 'normal 13px sans-serif';
+  el.style.textAlign = 'center';
+  el.style.opacity = '0.5';
+  el.style.outline = 'none';
+  el.style.cursor = 'pointer';
+  el.onmouseenter = () => { el.style.opacity = '1.0'; };
+  el.onmouseleave = () => { el.style.opacity = '0.5'; };
+}
+
+const entry = document.getElementById('entry');
 const vrButton = VRButton.createButton(renderer);
-vrButton.style.position = 'static';
-vrButton.style.transform = 'none';
-vrButton.style.width = 'auto';
-vrButton.style.margin = '0';
-vrButton.style.font = 'inherit';
-vrButton.style.fontWeight = '600';
-vrButton.style.padding = '13px 26px';
-vrButton.style.borderRadius = '10px';
-vrButton.style.background = '#2c4f8f';
-vrButton.style.border = '1px solid #ffffff2e';
-vrButton.style.color = '#fff';
-document.getElementById('vrbutton-slot').appendChild(vrButton);
+entry.appendChild(vrButton);
+
+const desktopButton = document.createElement('button');
+desktopButton.textContent = 'PLAY IN BROWSER';
+stylizeEntryButton(desktopButton);
+entry.appendChild(desktopButton);
+
+/**
+ * The entry row and help panel are up only while you are not playing. The VR
+ * button's own visibility stays three's to manage, so it keeps hiding itself
+ * until it knows whether a headset is available.
+ */
+function showEntry(on) {
+  entry.style.display = on ? 'flex' : 'none';
+  panel.style.display = on ? '' : 'none';
+  hud.setDomVisible(!on);
+  crosshair.style.display = on ? 'none' : 'block';
+}
+
+hud.setDomVisible(false);
 
 if (!navigator.xr) {
-  statusEl.textContent = 'No WebXR in this browser — desktop mode still works. '
-    + 'On Quest, open this page in the Meta Quest Browser over https or localhost.';
+  statusEl.textContent = 'No WebXR here — desktop mode still works. For the headset, '
+    + 'open this page in the Meta Quest Browser over https or localhost.';
 } else if (!window.isSecureContext) {
   statusEl.textContent = 'WebXR needs a secure context: serve over https, or use localhost.';
 }
 
-document.getElementById('desktop').addEventListener('click', () => {
-  overlay.style.display = 'none';
+desktopButton.addEventListener('click', () => {
   sfx.resume();
   // Pointer lock is refused inside some embedded frames; say so rather than
   // leaving the player looking at a world they cannot move in.
   const request = renderer.domElement.requestPointerLock();
   if (request && typeof request.catch === 'function') {
     request.catch(() => {
-      overlay.style.display = 'grid';
       statusEl.textContent = 'This browser refused pointer lock, which mouse look needs. '
         + 'Open the page in its own tab or window and try again.';
     });
@@ -345,19 +364,17 @@ document.getElementById('desktop').addEventListener('click', () => {
 });
 
 renderer.xr.addEventListener('sessionstart', () => {
-  overlay.style.display = 'none';
+  showEntry(false);
   crosshair.style.display = 'none';
   hud.panel.visible = true;
-  hud.setDomVisible(false);
   camera.rotation.set(0, 0, 0);
   player.headTracked = false;
   sfx.resume();
 });
 
 renderer.xr.addEventListener('sessionend', () => {
-  overlay.style.display = 'grid';
+  showEntry(true);
   hud.panel.visible = false;
-  hud.setDomVisible(true);
 });
 
 window.addEventListener('resize', () => {
