@@ -1,24 +1,24 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=8';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=8';
+import * as THREE from '../vendor/three/three.module.js?v=9';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=9';
 
-import { buildAtlas, blockCubeGeometry } from './textures.js?v=8';
-import { Terrain } from './terrain.js?v=8';
-import { Player } from './player.js?v=8';
-import { Inventory } from './inventory.js?v=8';
-import { Survival } from './survival.js?v=8';
-import { Mobs } from './mobs.js?v=8';
-import { Interactor } from './interact.js?v=8';
-import { Particles } from './fx.js?v=8';
-import { Hud, formatClock } from './ui.js?v=8';
-import { CraftUI } from './craftui.js?v=8';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=8';
-import { Sky } from './sky.js?v=8';
-import { block } from './blocks.js?v=8';
-import { sfx } from './sfx.js?v=8';
-import { SEA_LEVEL } from './world.js?v=8';
+import { buildAtlas, blockCubeGeometry } from './textures.js?v=9';
+import { Terrain } from './terrain.js?v=9';
+import { Player } from './player.js?v=9';
+import { Inventory } from './inventory.js?v=9';
+import { Survival } from './survival.js?v=9';
+import { Mobs } from './mobs.js?v=9';
+import { Interactor } from './interact.js?v=9';
+import { Particles } from './fx.js?v=9';
+import { Hud, formatClock } from './ui.js?v=9';
+import { CraftUI } from './craftui.js?v=9';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=9';
+import { Sky } from './sky.js?v=9';
+import { block } from './blocks.js?v=9';
+import { sfx } from './sfx.js?v=9';
+import { SEA_LEVEL } from './world.js?v=9';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -26,7 +26,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 8';
+const BUILD = 'build 9';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');

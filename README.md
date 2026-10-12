@@ -102,6 +102,11 @@ Doors and beds are **used** rather than placed on: aim at one and press place
 you through to dawn, but only if it is actually night. Ladders are climbed with
 jump to go up and sneak to come down.
 
+A door is two blocks tall and behaves as a single object: placing one needs two
+clear cells and fills both, using either half swings the whole thing, and breaking
+either half takes both. The upper half reads its facing from the lower half's
+neighbours, so the two can never end up pointing different ways.
+
 Tools matter, exactly as they do in Minecraft:
 
 - **Speed** — the right tool class is several times faster. Stone takes 1.5s with
@@ -148,7 +153,7 @@ is pushed back rather than letting your head pass through the blocks.
 
 - **Terrain** — infinite streamed chunks from layered value noise: hills, beaches,
   oceans, carved cave systems, coal and iron ores, and scattered trees.
-- **Building** — 16 placeable blocks, every one reachable from the creative
+- **Building** — 22 placeable blocks, every one reachable from the creative
   palette, including torches, crafting tables and furnaces. Breaking respects
   hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside

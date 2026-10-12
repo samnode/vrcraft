@@ -1,8 +1,8 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=8';
-import { TILES } from './blocks.js?v=8';
+import * as THREE from '../vendor/three/three.module.js?v=9';
+import { TILES } from './blocks.js?v=9';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
@@ -262,18 +262,28 @@ const painters = {
       ctx.fillRect(x, y, 2, 1);
     }
   },
+  // Lower half: one tall panel with the handle near its top edge.
   door(ctx, ox, oy) {
     grainy(ctx, ox, oy, [150, 112, 62], 0.1, 52);
     ctx.strokeStyle = 'rgba(96,70,36,0.85)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(ox + 3, oy + 2, TILE_PX - 6, TILE_PX - 4);
-    ctx.beginPath();
-    ctx.moveTo(ox + 3, oy + TILE_PX / 2); ctx.lineTo(ox + TILE_PX - 3, oy + TILE_PX / 2);
-    ctx.stroke();
+    ctx.strokeRect(ox + 4, oy, TILE_PX - 8, TILE_PX - 3);
     ctx.fillStyle = '#4a4a50';                      // handle
     ctx.beginPath();
-    ctx.arc(ox + TILE_PX - 8, oy + TILE_PX / 2 + 7, 2.5, 0, Math.PI * 2);
+    ctx.arc(ox + TILE_PX - 9, oy + 7, 2.5, 0, Math.PI * 2);
     ctx.fill();
+  },
+  // Upper half: panelled, with a small window so the two halves read as one door.
+  door_top(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [150, 112, 62], 0.1, 54);
+    ctx.strokeStyle = 'rgba(96,70,36,0.85)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox + 4, oy + 3, TILE_PX - 8, TILE_PX - 3);
+    ctx.fillStyle = 'rgba(120,150,170,0.55)';       // window
+    ctx.fillRect(ox + 9, oy + 8, TILE_PX - 18, 10);
+    ctx.strokeStyle = 'rgba(96,70,36,0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(ox + 9, oy + 8, TILE_PX - 18, 10);
   },
   ladder(ctx, ox, oy) {
     ctx.clearRect(ox, oy, TILE_PX, TILE_PX);

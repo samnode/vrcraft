@@ -5,13 +5,13 @@
 // Three buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
 // water (shimmers, drawn translucent) and other translucent blocks like glass.
 
-import * as THREE from '../vendor/three/three.module.js?v=8';
-import { SX, SY, SZ, idx } from './world.js?v=8';
+import * as THREE from '../vendor/three/three.module.js?v=9';
+import { SX, SY, SZ, idx } from './world.js?v=9';
 import {
   AIR, STONE, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
-  LIQUID_LUT, VARY_LUT, DOOR_OPEN,
-} from './blocks.js?v=8';
-import { tileUV } from './textures.js?v=8';
+  LIQUID_LUT, VARY_LUT, DOOR_OPEN, isDoor,
+} from './blocks.js?v=9';
+import { tileUV } from './textures.js?v=9';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
 const FACES = [
@@ -252,8 +252,11 @@ const THIN = 0.14;
  * Deriving this from the neighbours avoids needing per-block metadata, which the
  * flat Uint8 voxel array has no room for.
  */
-function panelBounds(id, lx, y, lz) {
-  const solid = (dx, dz) => OPAQUE_LUT[cache.vox[pidx(lx + dx, y, lz + dz)]];
+function panelBounds(id, lx, y, lz, isTop) {
+  // The upper half of a door reads its neighbours from the lower half's row, so
+  // the two halves can never disagree about which way the door faces.
+  const row = isTop ? y - 1 : y;
+  const solid = (dx, dz) => OPAQUE_LUT[cache.vox[pidx(lx + dx, row, lz + dz)]];
 
   if (CLIMB_LUT[id]) {
     if (solid(0, -1)) return [0, 0, 0, 1, 1, THIN];
@@ -273,10 +276,10 @@ function panelBounds(id, lx, y, lz) {
     : [0.5 - THIN / 2, 0, 0, 0.5 + THIN / 2, 1, 1];
 }
 
-function shapeBounds(id, lx, y, lz) {
+function shapeBounds(id, lx, y, lz, isTop) {
   if (POST_LUT[id]) return [0.42, 0, 0.42, 0.58, 0.62, 0.58];
   if (SLAB_LUT[id]) return [0, 0, 0, 1, 0.5, 1];
-  return panelBounds(id, lx, y, lz);
+  return panelBounds(id, lx, y, lz, isTop);
 }
 
 /**
@@ -284,7 +287,12 @@ function shapeBounds(id, lx, y, lz) {
  * a shape smaller than its cell can never be fully hidden by its neighbours.
  */
 function emitShape(buf, id, def, lx, y, lz, ox, oz) {
-  const [bx0, by0, bz0, bx1, by1, bz1] = shapeBounds(id, lx, y, lz);
+  // A tall block's upper half is the same id sitting on its own kind.
+  const isTop = def.tall && isDoor(id) && isDoor(cache.vox[pidx(lx, y - 1, lz)]);
+  const faces = isTop && def.topTile !== null
+    ? [def.topTile, def.topTile, def.topTile, def.topTile, def.topTile, def.topTile]
+    : def.faces;
+  const [bx0, by0, bz0, bx1, by1, bz1] = shapeBounds(id, lx, y, lz, isTop);
   const i0 = pidx(lx, y, lz);
   const skyL = cache.sky[i0] / 15;
   const blkL = Math.max(cache.blk[i0] / 15, def.light / 15);
@@ -292,7 +300,7 @@ function emitShape(buf, id, def, lx, y, lz, ox, oz) {
 
   for (let f = 0; f < 6; f++) {
     const face = FACES[f];
-    const [u0, v0, u1, v1] = tileUV(def.faces[f]);
+    const [u0, v0, u1, v1] = tileUV(faces[f]);
     buf.ensure();
     const base = buf.verts;
     for (let i = 0; i < 4; i++) {

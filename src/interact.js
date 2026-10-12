@@ -1,14 +1,14 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=8';
-import { raycastVoxel } from './raycast.js?v=8';
+import * as THREE from '../vendor/three/three.module.js?v=9';
+import { raycastVoxel } from './raycast.js?v=9';
 import {
   AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW,
-  block, isItem, isLiquid, isSolid, miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=8';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=8';
-import { sfx } from './sfx.js?v=8';
+  block, isItem, isLiquid, isSolid, isDoor, miningTime, canHarvest, attackDamage,
+} from './blocks.js?v=9';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=9';
+import { sfx } from './sfx.js?v=9';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -129,6 +129,12 @@ export class Interactor {
     const harvestable = canHarvest(hit.id, this.inventory.heldTool());
     if (!this.world.set(hit.x, hit.y, hit.z, AIR)) return;
 
+    // A door is one object in two cells: break either half and both go.
+    if (isDoor(hit.id)) {
+      const other = this.doorPartner(hit.x, hit.y, hit.z);
+      if (other !== null) this.world.set(hit.x, other, hit.z, AIR);
+    }
+
     const center = new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
     this.particles.burst(center, this.particleColor(hit.id), 16, 3.0);
     sfx.break();
@@ -189,6 +195,23 @@ export class Interactor {
     // Only solid blocks can seal the player in; a torch in your own square is fine.
     if (isSolid(id) && this.overlapsPlayer(x, y, z)) return;
 
+    const def = block(id);
+    if (def.tall) {
+      // Two cells tall, so both have to be clear before either is written.
+      const above = this.world.get(x, y + 1, z);
+      if (above !== AIR && !isLiquid(above)) {
+        if (this.onNotify) this.onNotify('Not enough room for a door');
+        return;
+      }
+      if (this.overlapsPlayer(x, y + 1, z)) return;
+      if (!this.world.set(x, y, z, id)) return;
+      this.world.set(x, y + 1, z, id);
+      this.inventory.consumeSelected();
+      this.placeTimer = PLACE_COOLDOWN;
+      sfx.place();
+      return;
+    }
+
     if (!this.world.set(x, y, z, id)) return;
     this.inventory.consumeSelected();
     this.placeTimer = PLACE_COOLDOWN;
@@ -199,7 +222,10 @@ export class Interactor {
   useBlock(hit, kind) {
     this.placeTimer = 0.35;
     if (kind === 'door') {
-      this.world.set(hit.x, hit.y, hit.z, hit.id === DOOR_CLOSED ? DOOR_OPEN : DOOR_CLOSED);
+      const next = hit.id === DOOR_CLOSED ? DOOR_OPEN : DOOR_CLOSED;
+      this.world.set(hit.x, hit.y, hit.z, next);
+      const other = this.doorPartner(hit.x, hit.y, hit.z);
+      if (other !== null) this.world.set(hit.x, other, hit.z, next);
       sfx.door();
       return;
     }
@@ -212,6 +238,13 @@ export class Interactor {
       sfx.sleep();
       if (this.onNotify) this.onNotify('Good morning');
     }
+  }
+
+  /** The y of this door's other half, or null if it somehow stands alone. */
+  doorPartner(x, y, z) {
+    if (isDoor(this.world.get(x, y + 1, z))) return y + 1;
+    if (isDoor(this.world.get(x, y - 1, z))) return y - 1;
+    return null;
   }
 
   /** Fires an arrow from the aim ray, consuming one from the inventory. */

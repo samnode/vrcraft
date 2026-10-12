@@ -17,7 +17,7 @@ export const TILES = [
   'axe_wood', 'axe_stone', 'axe_iron',
   'shovel_wood', 'shovel_stone', 'shovel_iron',
   'sword_wood', 'sword_stone', 'sword_iron',
-  'wool', 'door', 'ladder', 'bed',
+  'wool', 'door', 'door_top', 'ladder', 'bed',
   'beef', 'cooked_beef', 'cooked_pork', 'raw_chicken', 'cooked_chicken',
   'leather', 'feather', 'bone', 'string', 'arrow', 'bow', 'gunpowder',
 ];
@@ -51,6 +51,9 @@ function def(id, name, opts) {
     shape: opts.shape ?? 'cube',
     // Right-clicked rather than placed from: doors toggle, beds are slept in.
     use: opts.use ?? null,
+    // Blocks two cells tall. The upper half is the same id, drawn with topTile.
+    tall: opts.tall ?? false,
+    topTile: opts.topTile ?? null,
     material: opts.material ?? MAT.NONE,
     // Minimum tool tier for this block to drop anything. 0 means bare hands.
     requiresTier: opts.requiresTier ?? 0,
@@ -112,8 +115,8 @@ export const IRON_SWORD  = toolDef(41, 'Iron Sword',     'sword_iron',   TOOL.SW
 
 // ---------------------------------------------------------------- built blocks
 export const WOOL        = add(def(42, 'Wool',       { all: tile.wool, hardness: 0.6, material: MAT.PLANT }));
-export const DOOR_CLOSED = add(def(43, 'Door',       { all: tile.door, hardness: 0.8, material: MAT.WOOD, opaque: false, shape: 'panel', use: 'door' }));
-export const DOOR_OPEN   = add(def(44, 'Door',       { all: tile.door, hardness: 0.8, material: MAT.WOOD, opaque: false, solid: false, shape: 'panel', use: 'door', drop: 43 }));
+export const DOOR_CLOSED = add(def(43, 'Door', { all: tile.door, topTile: tile.door_top, tall: true, hardness: 0.8, material: MAT.WOOD, opaque: false, shape: 'panel', use: 'door' }));
+export const DOOR_OPEN   = add(def(44, 'Door', { all: tile.door, topTile: tile.door_top, tall: true, hardness: 0.8, material: MAT.WOOD, opaque: false, solid: false, shape: 'panel', use: 'door', drop: 43 }));
 export const LADDER      = add(def(45, 'Ladder',     { all: tile.ladder, hardness: 0.4, material: MAT.WOOD, opaque: false, solid: false, shape: 'panel' }));
 export const BED         = add(def(46, 'Bed',        { all: tile.bed, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'slab', use: 'bed' }));
 export const STONE_SLAB  = add(def(47, 'Stone Slab', { all: tile.cobble, hardness: 1.5, material: MAT.STONE, requiresTier: 1, opaque: false, shape: 'slab' }));
@@ -134,6 +137,7 @@ export const BOW             = add(def(59, 'Bow',             { all: tile.bow,  
 export const GUNPOWDER       = add(def(60, 'Gunpowder',       { all: tile.gunpowder,       item: true }));
 
 export function block(id) { return BLOCKS[id]; }
+export function isDoor(id) { return id === 43 || id === 44; }
 export function isOpaque(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].opaque; }
 export function isSolid(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].solid; }
 export function isLiquid(id) { return id === WATER; }
