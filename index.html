@@ -71,6 +71,8 @@
     <div id="status"></div>
   </div>
 
-  <script type="module" src="./src/main.js"></script>
+  <!-- Version bumped each deploy: Pages caches assets for 10 minutes, and this
+       forces a reload to pick up a fresh main.js rather than a stale copy. -->
+  <script type="module" src="./src/main.js?v=5"></script>
 </body>
 </html>

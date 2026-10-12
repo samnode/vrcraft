@@ -21,6 +21,9 @@ import { SEA_LEVEL } from './world.js';
 // above ~160 deg/s uncomfortable in a headset.
 const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at full deflection
 const TURN_DEADZONE = 0.15;
+// Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
+// how you tell at a glance whether a headset is running the build you expect.
+const BUILD = 'build 5 — smooth turn';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -365,6 +368,11 @@ function showEntry(on) {
 
 hud.setDomVisible(false);
 
+const buildEl = document.createElement('div');
+buildEl.textContent = BUILD;
+buildEl.style.cssText = 'margin-top:8px;font-size:11px;color:#6f84ab';
+panel.appendChild(buildEl);
+
 if (!navigator.xr) {
   statusEl.textContent = 'No WebXR here — desktop mode still works. For the headset, '
     + 'open this page in the Meta Quest Browser over https or localhost.';
@@ -386,6 +394,9 @@ desktopButton.addEventListener('click', () => {
 });
 
 renderer.xr.addEventListener('sessionstart', () => {
+  // A standalone headset has roughly a third of the CPU headroom of a laptop,
+  // and a blown frame during a turn reads as the rotation stuttering.
+  terrain.budgetMs = 2.5;
   showEntry(false);
   crosshair.style.display = 'none';
   hud.panel.visible = true;
@@ -395,6 +406,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 
 renderer.xr.addEventListener('sessionend', () => {
+  terrain.budgetMs = 6;
   showEntry(true);
   hud.panel.visible = false;
 });
@@ -421,6 +433,10 @@ const rayDirection = new THREE.Vector3();
 const forward = new THREE.Vector3(0, 0, -1);
 let last = performance.now();
 let hudTimer = 0;
+// Rolling frame time. Smooth rotation still looks like snapping if frames hitch,
+// so this is the number that tells the two apart in a headset.
+const frameTimes = [];
+let fps = 0, worstFrameMs = 0;
 
 function aimRay() {
   if (renderer.xr.isPresenting) {
@@ -437,8 +453,18 @@ function aimRay() {
 
 function render() {
   const now = performance.now();
-  const dt = Math.min((now - last) / 1000, 0.1);
+  const raw = now - last;
+  const dt = Math.min(raw / 1000, 0.1);
   last = now;
+
+  frameTimes.push(raw);
+  if (frameTimes.length > 60) frameTimes.shift();
+  if (frameTimes.length) {
+    const mean = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+    fps = Math.round(1000 / Math.max(mean, 0.01));
+    worstFrameMs = Math.max(...frameTimes);
+  }
+
   frame(dt);
 }
 
@@ -486,7 +512,7 @@ function frame(dt) {
       health: survival.health,
       hunger: survival.hunger,
       messages: survival.messages,
-      mode: inventory.creative ? 'Creative' : 'Survival',
+      mode: `${inventory.creative ? 'Creative' : 'Survival'}  ${fps} fps`,
       hoverSlot: pointer.hoverSlot,
       clock: formatClock(survival.time),
     });
@@ -568,7 +594,10 @@ renderer.setAnimationLoop(render);
 // Debug handle: handy from the browser console, and used by the test harness.
 window.VRCRAFT = {
   renderer, scene, camera, rig, terrain, player, inventory, survival, mobs,
-  interactor, particles, hud,
+  interactor, particles, hud, controllers, BUILD,
+  // Lets the VR input mapping be exercised without a headset: hand it a fake
+  // gamepad through controllers[i].userData and call this directly.
+  vrInput: (dt) => gatherVrInput(dt),
   teleport(x, y, z) { player.position.set(x, y, z); player.velocity.set(0, 0, 0); player.syncRig(); },
   /** Run frames at a fixed timestep; lets tests advance the world deterministically. */
   step(dt = 1 / 60, count = 1) { for (let i = 0; i < count; i++) frame(dt); },
@@ -586,6 +615,9 @@ window.VRCRAFT = {
       triangles: renderer.info.render.triangles,
       mobs: mobs.list.length,
       onGround: player.onGround,
+      build: BUILD,
+      fps,
+      worstFrameMs: +worstFrameMs.toFixed(1),
       daylight: +survival.daylight.toFixed(2),
       health: survival.health,
       hunger: survival.hunger,
