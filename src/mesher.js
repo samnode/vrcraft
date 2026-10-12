@@ -5,10 +5,13 @@
 // Three buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
 // water (shimmers, drawn translucent) and other translucent blocks like glass.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { SX, SY, SZ, idx } from './world.js?v=7';
-import { AIR, STONE, block, OPAQUE_LUT, POST_LUT, LIQUID_LUT, VARY_LUT } from './blocks.js?v=7';
-import { tileUV } from './textures.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { SX, SY, SZ, idx } from './world.js?v=8';
+import {
+  AIR, STONE, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
+  LIQUID_LUT, VARY_LUT, DOOR_OPEN,
+} from './blocks.js?v=8';
+import { tileUV } from './textures.js?v=8';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
 const FACES = [
@@ -161,8 +164,8 @@ export function buildChunkGeometry(world, chunk) {
         if (id === AIR) continue;
         const def = block(id);
 
-        if (POST_LUT[id]) {
-          emitPost(opaqueBuf, def, lx, y, lz, ox, oz);
+        if (POST_LUT[id] || SLAB_LUT[id] || PANEL_LUT[id]) {
+          emitShape(opaqueBuf, id, def, lx, y, lz, ox, oz);
           continue;
         }
 
@@ -241,25 +244,66 @@ function emitFace(buf, face, lx, y, lz, ox, oz, tileIndex, rot) {
   buf.quad(base);
 }
 
-/** A slim centred column, for torches. All six faces are always drawn. */
-function emitPost(buf, def, lx, y, lz, ox, oz) {
-  const R = 0.08, TOP = 0.62;
-  const [u0, v0, u1, v1] = tileUV(def.faces[0]);
-  const [s, b] = [cache.sky[pidx(lx, y, lz)] / 15, cache.blk[pidx(lx, y, lz)] / 15];
+const THIN = 0.14;
+
+/**
+ * Where a panel sits inside its cell. Ladders hug whichever wall they were put
+ * against; doors fill the gap in a wall, spanning the axis the wall runs along.
+ * Deriving this from the neighbours avoids needing per-block metadata, which the
+ * flat Uint8 voxel array has no room for.
+ */
+function panelBounds(id, lx, y, lz) {
+  const solid = (dx, dz) => OPAQUE_LUT[cache.vox[pidx(lx + dx, y, lz + dz)]];
+
+  if (CLIMB_LUT[id]) {
+    if (solid(0, -1)) return [0, 0, 0, 1, 1, THIN];
+    if (solid(0, 1)) return [0, 0, 1 - THIN, 1, 1, 1];
+    if (solid(-1, 0)) return [0, 0, 0, THIN, 1, 1];
+    if (solid(1, 0)) return [1 - THIN, 0, 0, 1, 1, 1];
+    return [0, 0, 0, 1, 1, THIN];
+  }
+
+  const xWall = solid(-1, 0) || solid(1, 0);
+  const zWall = solid(0, -1) || solid(0, 1);
+  // Spanning X means thin in Z, and vice versa. Opening the door swaps them.
+  let spanX = xWall || !zWall;
+  if (id === DOOR_OPEN) spanX = !spanX;
+  return spanX
+    ? [0, 0, 0.5 - THIN / 2, 1, 1, 0.5 + THIN / 2]
+    : [0.5 - THIN / 2, 0, 0, 0.5 + THIN / 2, 1, 1];
+}
+
+function shapeBounds(id, lx, y, lz) {
+  if (POST_LUT[id]) return [0.42, 0, 0.42, 0.58, 0.62, 0.58];
+  if (SLAB_LUT[id]) return [0, 0, 0, 1, 0.5, 1];
+  return panelBounds(id, lx, y, lz);
+}
+
+/**
+ * Emits a sub-cube: torches, slabs, doors and ladders. Every face is drawn, since
+ * a shape smaller than its cell can never be fully hidden by its neighbours.
+ */
+function emitShape(buf, id, def, lx, y, lz, ox, oz) {
+  const [bx0, by0, bz0, bx1, by1, bz1] = shapeBounds(id, lx, y, lz);
+  const i0 = pidx(lx, y, lz);
+  const skyL = cache.sky[i0] / 15;
+  const blkL = Math.max(cache.blk[i0] / 15, def.light / 15);
   const uvSet = QUAD_UV_ROT[0];
 
-  for (const face of FACES) {
+  for (let f = 0; f < 6; f++) {
+    const face = FACES[f];
+    const [u0, v0, u1, v1] = tileUV(def.faces[f]);
     buf.ensure();
     const base = buf.verts;
     for (let i = 0; i < 4; i++) {
       const c = face.corners[i];
       const uv = uvSet[i];
       buf.vertex(
-        ox + lx + 0.5 + (c[0] - 0.5) * R * 2,
-        y + c[1] * TOP,
-        oz + lz + 0.5 + (c[2] - 0.5) * R * 2,
+        ox + lx + (c[0] ? bx1 : bx0),
+        y + (c[1] ? by1 : by0),
+        oz + lz + (c[2] ? bz1 : bz0),
         uv[0] ? u1 : u0, uv[1] ? v1 : v0,
-        s, Math.max(b, def.light / 15), face.shade,
+        skyL, blkL, face.shade,
       );
     }
     buf.quad(base);

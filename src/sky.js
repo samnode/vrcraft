@@ -2,7 +2,7 @@
 // time-of-day value the terrain shader uses, so the world and the sky never
 // disagree about what hour it is.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
 
 const DOME_VERT = `
   varying vec3 vDir;

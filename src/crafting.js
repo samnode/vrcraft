@@ -9,8 +9,11 @@ import {
   LOG, PLANKS, STICK, TABLE, FURNACE, TORCH, COBBLE, COAL, IRON_ORE, IRON_INGOT,
   GLASS, SAND, WOOD_PICK, STONE_PICK, IRON_PICK, WOOD_AXE, STONE_AXE, IRON_AXE,
   WOOD_SHOVEL, STONE_SHOVEL, IRON_SHOVEL, WOOD_SWORD, STONE_SWORD, IRON_SWORD,
+  WOOL, DOOR_CLOSED, LADDER, BED, STONE_SLAB, WOOD_SLAB,
+  BEEF, COOKED_BEEF, PORKCHOP, COOKED_PORK, RAW_CHICKEN, COOKED_CHICKEN,
+  STRING, FEATHER, ARROW, BOW, BONE,
   block,
-} from './blocks.js?v=7';
+} from './blocks.js?v=8';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });
@@ -37,9 +40,24 @@ export const RECIPES = [
   r(STONE_SWORD, 1, [[COBBLE, 2], [STICK, 1]], 'table'),
   r(IRON_SWORD, 1, [[IRON_INGOT, 2], [STICK, 1]], 'table'),
 
+  // Building pieces.
+  r(DOOR_CLOSED, 1, [[PLANKS, 6]], 'table'),
+  r(LADDER, 3, [[STICK, 7]], 'table'),
+  r(BED, 1, [[WOOL, 3], [PLANKS, 3]], 'table'),
+  r(WOOD_SLAB, 6, [[PLANKS, 3]], 'table'),
+  r(STONE_SLAB, 6, [[COBBLE, 3]], 'table'),
+  r(WOOL, 1, [[STRING, 4]], 'table'),
+
+  // Ranged combat.
+  r(BOW, 1, [[STICK, 3], [STRING, 3]], 'table'),
+  r(ARROW, 4, [[STICK, 1], [FEATHER, 1], [COBBLE, 1]], 'table'),
+
   // Smelting: a furnace plus coal for fuel.
   r(IRON_INGOT, 1, [[IRON_ORE, 1], [COAL, 1]], 'furnace'),
   r(GLASS, 1, [[SAND, 1], [COAL, 1]], 'furnace'),
+  r(COOKED_BEEF, 1, [[BEEF, 1], [COAL, 1]], 'furnace'),
+  r(COOKED_PORK, 1, [[PORKCHOP, 1], [COAL, 1]], 'furnace'),
+  r(COOKED_CHICKEN, 1, [[RAW_CHICKEN, 1], [COAL, 1]], 'furnace'),
 ];
 
 export function hasIngredients(recipe, inventory) {

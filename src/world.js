@@ -3,11 +3,11 @@
 // (one opaque + one transparent mesh per column) at the cost of slightly larger
 // rebuilds when a block changes.
 
-import { fbm2, value3, rand2 } from './noise.js?v=7';
+import { fbm2, value3, rand2 } from './noise.js?v=8';
 import {
   AIR, GRASS, DIRT, STONE, SAND, LOG, LEAVES, WATER, COAL_ORE, IRON_ORE,
   block, isOpaque, isSolid,
-} from './blocks.js?v=7';
+} from './blocks.js?v=8';
 
 export const SX = 16, SY = 64, SZ = 16;
 export const SEA_LEVEL = 26;

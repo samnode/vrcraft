@@ -2,15 +2,15 @@
 // a DOM overlay on desktop, and a textured quad floating in front of you in VR
 // that the right controller points at.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { block } from './blocks.js?v=7';
-import { tileRect } from './textures.js?v=7';
-import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { block } from './blocks.js?v=8';
+import { tileRect } from './textures.js?v=8';
+import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=8';
 
-const W = 720, H = 700;
+const W = 920, H = 700;
 const ROW_H = 52, ROW_GAP = 4;
 const LIST_TOP = 92, PAD = 20;
-const COLS = 2;
+const COLS = 3;
 
 export class CraftUI {
   constructor(atlasCanvas) {
@@ -33,7 +33,7 @@ export class CraftUI {
 
     // Floats at a comfortable reading distance ahead of the player in VR.
     this.panel = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.62, 0.62 * H / W),
+      new THREE.PlaneGeometry(0.78, 0.78 * H / W),
       new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false }),
     );
     this.panel.renderOrder = 11;
@@ -45,7 +45,7 @@ export class CraftUI {
     // Bounded by viewport height as well as width, so the recipe list is never
     // clipped on a short window.
     el.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
-      + `width:min(720px, 92vw, calc(88vh * ${(W / H).toFixed(3)}));`
+      + `width:min(920px, 94vw, calc(88vh * ${(W / H).toFixed(3)}));`
       + 'image-rendering:pixelated;z-index:12;display:none;cursor:pointer';
     parent.appendChild(el);
   }
@@ -86,7 +86,7 @@ export class CraftUI {
     ctx.fillStyle = stations.table ? '#9fe6a0' : '#8fa6cf';
     ctx.fillText(stations.table ? 'Crafting table in reach' : 'No crafting table nearby', PAD, 68);
     ctx.fillStyle = stations.furnace ? '#ffc98f' : '#8fa6cf';
-    ctx.fillText(stations.furnace ? 'Furnace in reach' : 'No furnace nearby', PAD + 230, 68);
+    ctx.fillText(stations.furnace ? 'Furnace in reach' : 'No furnace nearby', PAD + 250, 68);
 
     ctx.textAlign = 'right';
     ctx.fillStyle = '#8fa6cf';
@@ -94,7 +94,7 @@ export class CraftUI {
     ctx.fillText(inventory.creative ? 'Creative: everything unlocked' : 'Pick a recipe to craft', W - PAD, 44);
 
     this.rowRects = [];
-    const colWidth = (W - PAD * 2 - 12) / COLS;
+    const colWidth = (W - PAD * 2 - 12 * (COLS - 1)) / COLS;
 
     RECIPES.forEach((recipe, i) => {
       const col = i % COLS, row = Math.floor(i / COLS);

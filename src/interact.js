@@ -1,14 +1,14 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { raycastVoxel } from './raycast.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { raycastVoxel } from './raycast.js?v=8';
 import {
-  AIR, LEAVES, APPLE, block, isItem, isLiquid, isSolid,
-  miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=7';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=7';
-import { sfx } from './sfx.js?v=7';
+  AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW,
+  block, isItem, isLiquid, isSolid, miningTime, canHarvest, attackDamage,
+} from './blocks.js?v=8';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=8';
+import { sfx } from './sfx.js?v=8';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -49,6 +49,7 @@ export class Interactor {
     scene.add(this.crack);
 
     this.onNotify = null;
+    this.lastRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3(0, 0, -1) };
   }
 
   /** ray: {origin: Vector3, direction: Vector3} already normalised. */
@@ -57,6 +58,7 @@ export class Interactor {
     this.hitTimer = Math.max(0, this.hitTimer - dt);
     this.digSoundTimer = Math.max(0, this.digSoundTimer - dt);
 
+    if (ray) this.lastRay = { origin: ray.origin.clone(), direction: ray.direction.clone() };
     const hit = ray ? raycastVoxel(this.world, ray.origin, ray.direction, REACH) : null;
     const mobHit = ray ? this.mobs.pick(ray.origin, ray.direction, 4) : null;
 
@@ -147,7 +149,7 @@ export class Interactor {
     this.setTarget(null);
   }
 
-  collect(id, count) {
+  collect(id, count = 1) {
     if (this.inventory.creative) return;
     if (this.inventory.add(id, count)) {
       sfx.pickup();
@@ -158,8 +160,18 @@ export class Interactor {
   }
 
   place(hit) {
+    // Right-clicking a door or bed operates it instead of placing from the hand,
+    // which is what makes them feel like furniture rather than scenery.
+    const targeted = block(hit.id);
+    if (targeted && targeted.use) {
+      this.useBlock(hit, targeted.use);
+      return;
+    }
+
     const id = this.inventory.placeable();
     if (!id) return;
+
+    if (id === BOW) { this.shoot(); return; }
 
     if (isItem(id)) {                                  // food is eaten, not placed
       if (this.survival.enabled && this.survival.eat(id)) {
@@ -183,6 +195,39 @@ export class Interactor {
     sfx.place();
   }
 
+  /** Doors swing; beds carry you to morning if it is actually night. */
+  useBlock(hit, kind) {
+    this.placeTimer = 0.35;
+    if (kind === 'door') {
+      this.world.set(hit.x, hit.y, hit.z, hit.id === DOOR_CLOSED ? DOOR_OPEN : DOOR_CLOSED);
+      sfx.door();
+      return;
+    }
+    if (kind === 'bed') {
+      if (!this.survival.isNight) {
+        if (this.onNotify) this.onNotify('You can only sleep at night');
+        return;
+      }
+      this.survival.sleep();
+      sfx.sleep();
+      if (this.onNotify) this.onNotify('Good morning');
+    }
+  }
+
+  /** Fires an arrow from the aim ray, consuming one from the inventory. */
+  shoot() {
+    if (!this.inventory.creative && this.inventory.countOf(ARROW) < 1) {
+      if (this.onNotify) this.onNotify('Out of arrows');
+      this.placeTimer = 0.4;
+      return;
+    }
+    if (!this.inventory.creative) this.inventory.remove(ARROW, 1);
+    this.placeTimer = 0.5;
+    const origin = this.lastRay.origin.clone();
+    const target = origin.clone().addScaledVector(this.lastRay.direction, 24);
+    this.mobs.arrows.fire(origin, target, 26, true);
+  }
+
   overlapsPlayer(x, y, z) {
     const h = PLAYER_WIDTH / 2 + 0.02;
     const p = this.player.position;
@@ -198,6 +243,8 @@ export class Interactor {
       6: 0x3f7c34, 7: 0xa8844f, 8: 0x6c6c70, 10: 0xd6ecf4, 11: 0x9a4e3e,
       12: 0xe2c46e, 13: 0x303034, 14: 0xcea684,
       17: 0xa8844f, 18: 0x707074, 19: 0xffd166,
+      42: 0xe8e8ee, 43: 0x96703e, 44: 0x96703e, 45: 0x9a7340, 46: 0xb03a3a,
+      47: 0x6c6c70, 48: 0xa8844f,
     };
     return COLORS[id] ?? 0x9a9a9a;
   }

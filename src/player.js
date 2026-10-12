@@ -6,8 +6,8 @@
 // and then the rig is repositioned to honour the result. Walking into a real wall
 // therefore pushes the rig back instead of letting the head clip through.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { isSolid, isLiquid } from './blocks.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { isSolid, isLiquid, CLIMB_LUT } from './blocks.js?v=8';
 
 const WIDTH = 0.6, HEIGHT = 1.8;
 const GRAVITY = 26;
@@ -15,6 +15,7 @@ const JUMP_SPEED = 8.4;
 const WALK_SPEED = 4.3;
 const SPRINT_SPEED = 6.2;
 const SWIM_SPEED = 3.0;
+const CLIMB_SPEED = 2.6;
 const FLY_SPEED = 9.0;
 const TERMINAL = 50;
 const STEP_UP = 0.55;            // auto-climb a single block edge while moving
@@ -29,6 +30,7 @@ export class Player {
     this.yaw = 0;                // rig yaw, turned by snap-turn or mouse
     this.onGround = false;
     this.inWater = false;
+    this.onLadder = false;
     this.flying = false;
     this.lastHeadLocal = new THREE.Vector2(0, 0);
     this.headTracked = false;
@@ -79,6 +81,7 @@ export class Player {
     const { fwd, right } = this.headingBasis();
 
     this.inWater = this.sampleWater();
+    this.onLadder = !this.flying && this.sampleLadder();
     const speed = this.flying ? FLY_SPEED
       : this.inWater ? SWIM_SPEED
       : (input.sprint ? SPRINT_SPEED : WALK_SPEED);
@@ -99,6 +102,11 @@ export class Player {
     } else if (this.inWater) {
       this.velocity.y += (input.jump ? 14 : -5) * dt;
       this.velocity.y = THREE.MathUtils.clamp(this.velocity.y, -3.5, 3.5);
+      this.fallStartY = null;
+    } else if (this.onLadder) {
+      // On a ladder you climb with jump, descend with sneak, and otherwise ease
+      // downwards rather than falling.
+      this.velocity.y = input.jump ? CLIMB_SPEED : (input.sneak ? -CLIMB_SPEED : -0.9);
       this.fallStartY = null;
     } else {
       this.velocity.y -= GRAVITY * dt;
@@ -235,6 +243,20 @@ export class Player {
     return false;
   }
 
+  /** True when the player's body overlaps a climbable block. */
+  sampleLadder() {
+    const h = WIDTH / 2;
+    const { x, y, z } = this.position;
+    for (let yy = Math.floor(y); yy <= Math.floor(y + HEIGHT - 0.1); yy++) {
+      for (let zz = Math.floor(z - h); zz <= Math.floor(z + h); zz++) {
+        for (let xx = Math.floor(x - h); xx <= Math.floor(x + h); xx++) {
+          if (CLIMB_LUT[this.world.get(xx, yy, zz)]) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   sampleWater() {
     const { x, y, z } = this.position;
     return isLiquid(this.world.get(Math.floor(x), Math.floor(y + 0.9), Math.floor(z)))
@@ -242,7 +264,7 @@ export class Player {
   }
 
   trackFall() {
-    if (this.flying || this.inWater) { this.fallStartY = null; return; }
+    if (this.flying || this.inWater || this.onLadder) { this.fallStartY = null; return; }
     if (!this.onGround) {
       if (this.velocity.y < -0.1 && this.fallStartY === null) this.fallStartY = this.position.y;
       return;

@@ -1,12 +1,12 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { TILES } from './blocks.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { TILES } from './blocks.js?v=8';
 
 export const TILE_PX = 32;
-export const ATLAS_COLS = 7;
-export const ATLAS_ROWS = 6;
+export const ATLAS_COLS = 8;
+export const ATLAS_ROWS = 7;
 
 // Deterministic per-pixel jitter so tiles look grainy rather than flat.
 function px(x, y, salt) {
@@ -252,7 +252,150 @@ const painters = {
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.fillRect(ox + 11, oy + 14, 10, 2);
   },
+  wool(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [226, 226, 232], 0.08, 50);
+    // Short fibres in random directions give it a felted look.
+    for (let i = 0; i < 70; i++) {
+      const x = ox + Math.floor(px(i, 1, 51) * TILE_PX);
+      const y = oy + Math.floor(px(i, 2, 51) * TILE_PX);
+      ctx.fillStyle = px(i, 3, 51) > 0.5 ? 'rgba(200,200,208,0.7)' : 'rgba(250,250,255,0.8)';
+      ctx.fillRect(x, y, 2, 1);
+    }
+  },
+  door(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [150, 112, 62], 0.1, 52);
+    ctx.strokeStyle = 'rgba(96,70,36,0.85)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox + 3, oy + 2, TILE_PX - 6, TILE_PX - 4);
+    ctx.beginPath();
+    ctx.moveTo(ox + 3, oy + TILE_PX / 2); ctx.lineTo(ox + TILE_PX - 3, oy + TILE_PX / 2);
+    ctx.stroke();
+    ctx.fillStyle = '#4a4a50';                      // handle
+    ctx.beginPath();
+    ctx.arc(ox + TILE_PX - 8, oy + TILE_PX / 2 + 7, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  ladder(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.fillStyle = '#9a7340';
+    ctx.fillRect(ox + 4, oy, 4, TILE_PX);           // rails
+    ctx.fillRect(ox + TILE_PX - 8, oy, 4, TILE_PX);
+    ctx.fillStyle = '#b08a52';
+    for (let y = 5; y < TILE_PX; y += 9) ctx.fillRect(ox + 4, oy + y, TILE_PX - 8, 3);
+  },
+  bed(ctx, ox, oy) {
+    ctx.fillStyle = '#b03a3a';
+    ctx.fillRect(ox, oy, TILE_PX, TILE_PX);
+    grainy(ctx, ox, oy, [176, 58, 58], 0.1, 53);
+    ctx.fillStyle = '#f2eee4';                      // pillow
+    ctx.fillRect(ox + 4, oy + 3, TILE_PX - 8, 9);
+    ctx.fillStyle = 'rgba(120,36,36,0.6)';
+    ctx.fillRect(ox, oy + TILE_PX - 4, TILE_PX, 4);
+  },
 };
+
+// Small round or elongated item icons, all drawn the same way.
+function blobIcon(color, shade, rx, ry) {
+  return (ctx, ox, oy) => {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    const c = TILE_PX / 2;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(ox + c, oy + c, rx, ry, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = shade;
+    ctx.beginPath();
+    ctx.ellipse(ox + c - rx * 0.3, oy + c - ry * 0.3, rx * 0.35, ry * 0.3, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  };
+}
+
+Object.assign(painters, {
+  beef:           blobIcon('#c7504e', 'rgba(255,255,255,0.35)', 11, 8),
+  cooked_beef:    blobIcon('#8a4a2c', 'rgba(255,210,150,0.4)', 11, 8),
+  cooked_pork:    blobIcon('#a9603a', 'rgba(255,220,170,0.4)', 11, 8),
+  raw_chicken:    blobIcon('#e8b9a8', 'rgba(255,255,255,0.45)', 10, 8),
+  cooked_chicken: blobIcon('#c08848', 'rgba(255,228,170,0.45)', 10, 8),
+  leather:        blobIcon('#9a6b3f', 'rgba(220,180,130,0.35)', 11, 9),
+  gunpowder(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    for (let i = 0; i < 40; i++) {
+      const x = ox + 6 + Math.floor(px(i, 1, 60) * (TILE_PX - 12));
+      const y = oy + 6 + Math.floor(px(i, 2, 60) * (TILE_PX - 12));
+      ctx.fillStyle = px(i, 3, 60) > 0.5 ? '#4a4a52' : '#6e6e78';
+      ctx.fillRect(x, y, 2, 2);
+    }
+  },
+  feather(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.save();
+    ctx.translate(ox + TILE_PX / 2, oy + TILE_PX / 2);
+    ctx.rotate(-0.6);
+    ctx.fillStyle = '#eef2f8';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b9c3d2';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -12); ctx.lineTo(0, 13);
+    ctx.stroke();
+    ctx.restore();
+  },
+  bone(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.save();
+    ctx.translate(ox + TILE_PX / 2, oy + TILE_PX / 2);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = '#eeead8';
+    ctx.fillRect(-3, -9, 6, 18);
+    for (const y of [-10, 10]) {
+      ctx.beginPath();
+      ctx.arc(-3, y, 3.5, 0, Math.PI * 2);
+      ctx.arc(3, y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  },
+  string(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.strokeStyle = '#e4e4ea';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ox + 6, oy + 4);
+    ctx.bezierCurveTo(ox + 26, oy + 10, ox + 6, oy + 20, ox + 26, oy + 28);
+    ctx.stroke();
+  },
+  arrow(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.save();
+    ctx.translate(ox + TILE_PX / 2, oy + TILE_PX / 2);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = '#8a6636';
+    ctx.fillRect(-1.5, -12, 3, 22);
+    ctx.fillStyle = '#d8d8dc';                      // head
+    ctx.beginPath();
+    ctx.moveTo(0, -15); ctx.lineTo(4, -8); ctx.lineTo(-4, -8);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#eef2f8';                      // fletching
+    ctx.fillRect(-4, 7, 8, 2);
+    ctx.restore();
+  },
+  bow(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    const c = TILE_PX / 2;
+    ctx.strokeStyle = '#8a6636';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(ox + c + 5, oy + c, 11, Math.PI * 0.55, Math.PI * 1.45);
+    ctx.stroke();
+    ctx.strokeStyle = '#e4e4ea';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ox + c - 1, oy + c - 10); ctx.lineTo(ox + c - 1, oy + c + 10);
+    ctx.stroke();
+  },
+});
 
 // Tools share one painter: a shaft plus a head whose silhouette depends on the
 // kind and whose colour depends on the material tier.

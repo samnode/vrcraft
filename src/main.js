@@ -1,24 +1,24 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=8';
 
-import { buildAtlas, blockCubeGeometry } from './textures.js?v=7';
-import { Terrain } from './terrain.js?v=7';
-import { Player } from './player.js?v=7';
-import { Inventory } from './inventory.js?v=7';
-import { Survival } from './survival.js?v=7';
-import { Mobs } from './mobs.js?v=7';
-import { Interactor } from './interact.js?v=7';
-import { Particles } from './fx.js?v=7';
-import { Hud, formatClock } from './ui.js?v=7';
-import { CraftUI } from './craftui.js?v=7';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=7';
-import { Sky } from './sky.js?v=7';
-import { block } from './blocks.js?v=7';
-import { sfx } from './sfx.js?v=7';
-import { SEA_LEVEL } from './world.js?v=7';
+import { buildAtlas, blockCubeGeometry } from './textures.js?v=8';
+import { Terrain } from './terrain.js?v=8';
+import { Player } from './player.js?v=8';
+import { Inventory } from './inventory.js?v=8';
+import { Survival } from './survival.js?v=8';
+import { Mobs } from './mobs.js?v=8';
+import { Interactor } from './interact.js?v=8';
+import { Particles } from './fx.js?v=8';
+import { Hud, formatClock } from './ui.js?v=8';
+import { CraftUI } from './craftui.js?v=8';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=8';
+import { Sky } from './sky.js?v=8';
+import { block } from './blocks.js?v=8';
+import { sfx } from './sfx.js?v=8';
+import { SEA_LEVEL } from './world.js?v=8';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -26,7 +26,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 7';
+const BUILD = 'build 8';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -85,9 +85,17 @@ player.onFallDamage = (amount) => {
   sfx.hurt();
 };
 
-mobs.onDrop = (id, position) => {
-  particles.burst(position, 0xd98d88, 10, 2.0);
-  interactor.collect(id, 1);
+mobs.onDrop = (id, count, position) => {
+  particles.burst(position, 0xd98d88, 8, 2.0);
+  interactor.collect(id, count);
+};
+
+mobs.onExplode = (position, radius) => {
+  particles.burst(position, 0x3a3a3a, 60, 7.5);
+  particles.burst(position, 0xffa040, 30, 5.5);
+  // Everything within the blast takes damage, falling off with distance.
+  const d = player.position.distanceTo(position);
+  if (d < radius + 1.5) survival.damage(Math.round(14 * (1 - d / (radius + 1.5))), 'a creeper');
 };
 interactor.onNotify = (text) => survival.note(text);
 

@@ -61,6 +61,26 @@ only way to start a run in survival; on desktop `C` swaps at any time.
 - **Survival** — nine empty slots you fill by mining, real stack counts, health,
   hunger, fall damage, hostile zombies after dark, and no flying.
 
+## Mobs
+
+Eight kinds, each with its own behaviour and drops.
+
+| Mob | Behaviour | Drops |
+| --- | --- | --- |
+| Pig | Wanders | Porkchop |
+| Cow | Wanders | Raw beef, leather |
+| Sheep | Wanders | Wool |
+| Chicken | Wanders, quick | Raw chicken, feathers |
+| Zombie | Chases and hits you; burns at dawn | — |
+| Skeleton | Keeps its distance and shoots arrows; burns at dawn | Bones, arrows |
+| Creeper | Closes in, blinks, then blows a hole in the world | Gunpowder |
+| Spider | Fast, low, attacks at night | String |
+
+Passive animals spawn in daylight; the hostile roster only comes out at night and
+only in survival. Creeper blasts are real: they carve a ragged sphere out of the
+terrain, damage anything nearby with falloff, and you have about a second and a
+half of blinking to get clear.
+
 ## Crafting
 
 Open the recipe panel with `E` on desktop, or the left grip in VR, where it floats
@@ -71,7 +91,16 @@ what you cannot make yet is dimmed with the reason.
 
 The progression is the familiar one. Punch a tree for wood, turn it into planks
 and sticks, build a crafting table, and the tool recipes open up. Mine stone for
-cobblestone, build a furnace, and smelt iron ore into ingots.
+cobblestone, build a furnace, and smelt iron ore into ingots — and your meat into
+something worth eating.
+
+Thirty recipes in all. Beyond tools: doors, ladders, beds, wool, stone and wood
+slabs, and a bow with arrows for fighting back at range.
+
+Doors and beds are **used** rather than placed on: aim at one and press place
+(right-click, or the left trigger in VR). Doors swing open and shut; a bed carries
+you through to dawn, but only if it is actually night. Ladders are climbed with
+jump to go up and sneak to come down.
 
 Tools matter, exactly as they do in Minecraft:
 
@@ -94,6 +123,9 @@ Tools matter, exactly as they do in Minecraft:
 | Jump | `A` | `Space` |
 | Sprint | Left stick click | `Shift` |
 | Crafting | Left grip | `E` |
+| Use a door or bed | Left trigger | Right click |
+| Shoot a bow | Left trigger | Right click |
+| Climb a ladder | `A` / left stick click | `Space` / `Ctrl` |
 | Pick a block | Point at your wrist panel, pull the trigger | `1`–`9` |
 | Next / previous block | `B` / `X` | Scroll wheel |
 | Toggle flight (creative) | `Y` | `F` |
@@ -121,8 +153,10 @@ is pushed back rather than letting your head pass through the blocks.
   hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside
   terrain, say — and the player is lifted clear rather than stuck.
-- **Crafting** — 19 recipes across wood, stone and iron, gated by whether a
+- **Crafting** — 30 recipes across wood, stone and iron, gated by whether a
   crafting table or furnace is within four blocks of you.
+- **Mobs** — eight kinds: four passive animals, plus zombies, arrow-firing
+  skeletons, creepers that detonate and destroy terrain, and fast night spiders.
 - **Lighting** — per-voxel sky and block light with flood-fill propagation, plus
   per-vertex ambient occlusion. The two light types are tinted separately in the
   shader: sunlight cools and dims towards night while torchlight stays warm, so a
@@ -135,9 +169,9 @@ is pushed back rather than letting your head pass through the blocks.
 - **Surfaces** — block textures are randomly rotated per position, which breaks
   up the obvious tiling across a field of stone or dirt without any extra texture
   memory. Water shimmers on a travelling wave.
-- **Survival** — health, hunger, fall damage, drowning-free swimming, a 10-minute
-  day cycle, pigs that wander and zombies that hunt you after dark and burn at
-  dawn. Apples drop from leaves; porkchops drop from pigs.
+- **Survival** — health, hunger, fall damage, swimming, ladder climbing, sleeping
+  through the night, and a 10-minute day cycle. Food comes from leaves, animals
+  and the furnace.
 - **Creative** — unlimited blocks, no damage, flight. The mode the game starts in.
 
 ## Layout
@@ -173,8 +207,12 @@ Quest has a ~13.9 ms frame budget at 72 Hz. The numbers that matter, measured on
 this build:
 
 - Idle frame CPU: **~0.1 ms** — the world is static until something changes.
-- Placing or breaking a block: **~4.9 ms** median, **9.4 ms** worst case.
-- Chunk rebuild: ~2.3 ms meshing + ~1.7 ms lighting.
+- Placing or breaking a block: **~5.1 ms** median, **8.0 ms** worst case.
+- Chunk rebuild: ~2.3–4.0 ms meshing + ~2.3 ms lighting, depending on how much
+  is built in the column.
+- A creeper blast: 1.5 ms to carve the blocks, then two frames of ~8 ms and
+  ~4 ms as the affected chunks remesh. Chunk rebuilds are atomic, so a very
+  large edit always costs at least one full rebuild in the frame that follows.
 - A loaded view at radius 4: ~70 chunk columns, 30–40 draw calls after frustum
   culling, ~60k triangles. The sky dome, clouds, sun and moon add four more.
 

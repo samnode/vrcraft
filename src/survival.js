@@ -1,8 +1,8 @@
 // Day/night cycle, health and hunger. The cycle drives one shader uniform plus the
 // sky and fog colour, so terrain lighting costs nothing extra at runtime.
 
-import * as THREE from '../vendor/three/three.module.js?v=7';
-import { block } from './blocks.js?v=7';
+import * as THREE from '../vendor/three/three.module.js?v=8';
+import { block } from './blocks.js?v=8';
 
 const DAY_SECONDS = 600;                 // one full in-game day
 const MAX_HEALTH = 20, MAX_HUNGER = 20;
@@ -77,6 +77,13 @@ export class Survival {
     if (this.hunger >= MAX_HUNGER) return false;
     this.hunger = Math.min(MAX_HUNGER, this.hunger + def.food);
     return true;
+  }
+
+  /** Sleep through to dawn. Only meaningful at night, which the caller checks. */
+  sleep() {
+    this.time = 0.02;                 // just after sunrise
+    this.health = Math.min(MAX_HEALTH, this.health + 6);
+    this.exhaustion = 0;
   }
 
   revive() {

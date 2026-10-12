@@ -55,4 +55,12 @@ export const sfx = {
   hurt:   () => tone({ freq: 440, type: 'sawtooth', duration: 0.18, gain: 0.12, sweep: -260 }),
   pickup: () => tone({ freq: 660, type: 'triangle', duration: 0.07, gain: 0.08, sweep: 220 }),
   eat:    () => noise({ duration: 0.2, gain: 0.07, cutoff: 500 }),
+  shoot:  () => tone({ freq: 520, type: 'triangle', duration: 0.09, gain: 0.07, sweep: -260 }),
+  fuse:   () => noise({ duration: 0.45, gain: 0.09, cutoff: 3200 }),
+  explode: () => {
+    noise({ duration: 0.65, gain: 0.3, cutoff: 500 });
+    tone({ freq: 90, type: 'sawtooth', duration: 0.5, gain: 0.18, sweep: -60 });
+  },
+  door:   () => tone({ freq: 240, type: 'square', duration: 0.12, gain: 0.06, sweep: -90 }),
+  sleep:  () => tone({ freq: 300, type: 'sine', duration: 0.5, gain: 0.07, sweep: 120 }),
 };
