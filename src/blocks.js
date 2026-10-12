@@ -69,8 +69,14 @@ export function isOpaque(id) { return id !== AIR && BLOCKS[id].opaque; }
 export function isSolid(id) { return id !== AIR && BLOCKS[id].solid; }
 export function isLiquid(id) { return id === WATER; }
 
-// Blocks offered in the creative-ish hotbar before anything is mined.
-export const STARTING_HOTBAR = [GRASS, DIRT, STONE, COBBLE, PLANKS, LOG, GLASS, GLOWSTONE, BRICK];
+// Every block you can place in creative. The hotbar shows this whole palette, so
+// nothing in the world is unreachable; survival instead fills nine slots from
+// whatever you have actually mined.
+export const CREATIVE_PALETTE = [
+  GRASS, DIRT, STONE, SAND, COBBLE, PLANKS, LOG,
+  LEAVES, BRICK, GLASS, GLOWSTONE, COAL_ORE, IRON_ORE,
+];
+export const SURVIVAL_SLOTS = 9;
 
 // Flat lookup tables for the mesher's inner loop, where a property access per
 // voxel neighbour is measurably too slow.

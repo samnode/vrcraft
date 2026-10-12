@@ -6,8 +6,9 @@ import { block } from './blocks.js';
 import { tileRect } from './textures.js';
 import { MAX_HEALTH, MAX_HUNGER } from './survival.js';
 
-const W = 768, H = 232;
-const SLOT = 60, SLOT_GAP = 6;
+const W = 768, H = 300;
+const SLOT = 54, SLOT_GAP = 6;
+const HOTBAR_TOP = 112;
 
 export class Hud {
   constructor(atlasCanvas) {
@@ -26,7 +27,10 @@ export class Hud {
 
     // Wrist panel: a quad parented to the left controller, tilted into view.
     const mat = new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false });
-    this.panel = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26 * H / W), mat);
+    this.panel = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.30 * H / W), mat);
+    // Canvas-pixel rect per slot, refreshed on every draw so the VR pointer can
+    // map a hit on this panel back to the block it is over.
+    this.slotRects = [];
     this.panel.position.set(0, 0.045, -0.06);
     this.panel.rotation.set(-Math.PI / 3.1, 0, 0);
     this.panel.renderOrder = 10;
@@ -56,7 +60,7 @@ export class Hud {
 
     this.drawMessages(ctx, state.messages);
     if (state.survival) this.drawBars(ctx, state.health, state.hunger);
-    this.drawHotbar(ctx, state.slots, state.selected, state.creative);
+    this.drawHotbar(ctx, state.slots, state.selected, state.creative, state.hoverSlot);
     this.drawFooter(ctx, state);
 
     this.texture.needsUpdate = true;
@@ -77,7 +81,7 @@ export class Hud {
   }
 
   drawBars(ctx, health, hunger) {
-    const y = 92;
+    const y = 88;
     for (let i = 0; i < MAX_HEALTH / 2; i++) {
       const filled = health >= (i + 1) * 2 ? 1 : (health > i * 2 ? 0.5 : 0);
       this.icon(ctx, 86 + i * 24, y, filled, '#e0373c', '#4a1114');
@@ -102,26 +106,34 @@ export class Hud {
     ctx.fill();
   }
 
-  drawHotbar(ctx, slots, selected, creative) {
-    const total = slots.length * SLOT + (slots.length - 1) * SLOT_GAP;
-    const x0 = (W - total) / 2;
-    const y = 118;
+  /**
+   * Lays the palette out in up to two rows, so a 13-block creative palette and a
+   * 9-slot survival bar both fit without changing the panel's shape.
+   */
+  drawHotbar(ctx, slots, selected, creative, hoverSlot) {
+    const perRow = slots.length <= 9 ? slots.length : Math.ceil(slots.length / 2);
+    this.slotRects = [];
 
     slots.forEach((slot, i) => {
-      const x = x0 + i * (SLOT + SLOT_GAP);
+      const row = Math.floor(i / perRow);
+      const col = i % perRow;
+      const count = Math.min(perRow, slots.length - row * perRow);
+      const rowWidth = count * SLOT + (count - 1) * SLOT_GAP;
+      const x = (W - rowWidth) / 2 + col * (SLOT + SLOT_GAP);
+      const y = HOTBAR_TOP + row * (SLOT + 20);
+      this.slotRects.push({ x, y, w: SLOT, h: SLOT });
+
       const active = i === selected;
+      const hovered = i === hoverSlot;
 
       ctx.fillStyle = active ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.42)';
       ctx.fillRect(x, y, SLOT, SLOT);
-      ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = active ? 3 : 1.5;
-      ctx.strokeRect(x + 0.5, y + 0.5, SLOT - 1, SLOT - 1);
 
       if (slot.id) {
         const r = tileRect(block(slot.id).faces[2]);   // top face reads best as an icon
-        ctx.drawImage(this.atlas, r.x, r.y, r.w, r.h, x + 7, y + 7, SLOT - 14, SLOT - 14);
-        if (!creative && slot.count !== Infinity) {
-          ctx.font = '700 16px system-ui, sans-serif';
+        ctx.drawImage(this.atlas, r.x, r.y, r.w, r.h, x + 6, y + 6, SLOT - 12, SLOT - 12);
+        if (!creative && slot.count !== Infinity && slot.count > 0) {
+          ctx.font = '700 15px system-ui, sans-serif';
           ctx.textAlign = 'right';
           ctx.fillStyle = '#000';
           ctx.fillText(String(slot.count), x + SLOT - 4, y + SLOT - 5);
@@ -130,11 +142,31 @@ export class Hud {
         }
       }
 
-      ctx.font = '600 12px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.fillText(String(i + 1), x + SLOT / 2, y + SLOT + 14);
+      // Hover outline is what makes pointing at the wrist panel feel aimed.
+      ctx.strokeStyle = active ? '#ffffff' : (hovered ? '#8fd0ff' : 'rgba(255,255,255,0.3)');
+      ctx.lineWidth = active ? 3 : (hovered ? 3 : 1.5);
+      ctx.strokeRect(x + 0.5, y + 0.5, SLOT - 1, SLOT - 1);
+
+      if (i < 9) {
+        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(String(i + 1), x + SLOT / 2, y + SLOT + 13);
+      }
     });
+  }
+
+  /**
+   * Maps a UV hit on the panel to a slot index, or -1. UV origin is bottom-left
+   * while the canvas runs top-down, so v is flipped.
+   */
+  slotAtUV(u, v) {
+    const px = u * W, py = (1 - v) * H;
+    for (let i = 0; i < this.slotRects.length; i++) {
+      const r = this.slotRects[i];
+      if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i;
+    }
+    return -1;
   }
 
   drawFooter(ctx, state) {

@@ -51,6 +51,16 @@ It prints an `https://<your-lan-ip>:8443` address to open in the headset.
 Any HTTPS static host works the same way — this repo is served straight from
 `main` by GitHub Pages, with no build step and nothing to configure.
 
+## Modes
+
+Pick **creative** or **survival** with the mode button on the start screen, before
+you enter. A headset session has no web page to click, so choosing up front is the
+only way to start a run in survival; on desktop `C` swaps at any time.
+
+- **Creative** — the whole 13-block palette with unlimited counts, flight, no damage.
+- **Survival** — nine empty slots you fill by mining, real stack counts, health,
+  hunger, fall damage, hostile zombies after dark, and no flying.
+
 ## Controls
 
 | Action | VR | Desktop |
@@ -61,10 +71,15 @@ Any HTTPS static host works the same way — this repo is served straight from
 | Place / eat | Left trigger or either grip | Right click |
 | Jump | `A` | `Space` |
 | Sprint | Left stick click | `Shift` |
-| Next / previous item | `B` / `X` | Scroll or `1`–`9` |
-| Toggle flight | `Y` | `F` |
+| Pick a block | Point at your wrist panel, pull the trigger | `1`–`9` |
+| Next / previous block | `B` / `X` | Scroll wheel |
+| Toggle flight (creative) | `Y` | `F` |
 | Fly up / down | `A` / right stick down | `Space` / `Ctrl` |
-| Creative ↔ survival | — | `C` |
+| Creative ↔ survival | Choose on the start screen | `C` |
+
+The hotbar lives on your left wrist in VR. Aim the right controller at it and the
+slot under your pointer highlights; pull the trigger to select that block. Mining
+is suppressed while you are pointing at the panel, so the trigger never does both.
 
 Room-scale walking is collided against the world: step into a real wall and the rig
 is pushed back rather than letting your head pass through the blocks.
@@ -73,9 +88,11 @@ is pushed back rather than letting your head pass through the blocks.
 
 - **Terrain** — infinite streamed chunks from layered value noise: hills, beaches,
   oceans, carved cave systems, coal and iron ores, and scattered trees.
-- **Building** — break and place 14 block types. Breaking respects hardness, drops
-  the right item (stone yields cobblestone, grass yields dirt), and refuses any
-  placement that would seal you inside a block.
+- **Building** — break and place 13 block types, every one of them reachable from
+  the creative palette. Breaking respects hardness, drops the right item (stone
+  yields cobblestone, grass yields dirt), and refuses any placement that would
+  seal you inside a block. Get wedged anyway — by switching flight off inside
+  terrain, say — and the player is lifted clear rather than stuck.
 - **Lighting** — per-voxel sky and block light with flood-fill propagation, plus
   per-vertex ambient occlusion. Glowstone lights caves; the day/night cycle is a
   single shader uniform, so sunset costs nothing to animate.

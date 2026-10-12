@@ -28,7 +28,8 @@
      session state changes, so the row neutralises its positioning with
      !important and lays the two buttons out with flex instead. */
   #entry { position: fixed; bottom: 20px; left: 0; right: 0; z-index: 999;
-    display: flex; gap: 12px; justify-content: center; pointer-events: none; }
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+    padding: 0 12px; pointer-events: none; }
   #entry > * { position: static !important; left: auto !important; right: auto !important;
     top: auto !important; bottom: auto !important; width: auto !important;
     margin: 0 !important; padding: 12px 18px !important; pointer-events: auto; }
@@ -54,6 +55,7 @@
       <i>Right trigger</i><span>Break / attack</span>
       <i>Left trigger</i><span>Place / eat</span>
       <i>A / B / X / Y</i><span>Jump / next / prev / fly</span>
+      <i>Point at wrist</i><span>Aim at the hotbar, pull trigger to pick</span>
     </div>
     <h3>On desktop</h3>
     <div class="keys">
@@ -61,7 +63,10 @@
       <i>Click / right-click</i><span>Break / place</span>
       <i>Space / Shift</i><span>Jump / sprint</span>
       <i>1–9, scroll</i><span>Select block</span>
-      <i>F / C / Esc</i><span>Fly / creative / release</span>
+      <i>F / C / Esc</i><span>Fly / swap mode / release</span>
+    </div>
+    <div class="keys" style="margin-top:8px">
+      <i>Mode</i><span>Pick creative or survival below before you start</span>
     </div>
     <div id="status"></div>
   </div>

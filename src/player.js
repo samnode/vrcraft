@@ -51,7 +51,8 @@ export class Player {
     fwd.y = 0;
     if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
     fwd.normalize();
-    const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+    // right = forward x up. Negating this swaps strafe, so the sign matters.
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
     return { fwd, right };
   }
 
@@ -70,6 +71,9 @@ export class Player {
   update(dt, input) {
     dt = Math.min(dt, 0.05);                      // clamp hitches so nothing tunnels
     if (input.turn) this.applyTurn(input.turn);
+    // Switching flight off inside terrain, or having blocks placed around you,
+    // would otherwise wedge the player with no way out.
+    if (!this.flying && this.intersects()) this.unstick();
 
     const head = this.headLocalDrift();
     const { fwd, right } = this.headingBasis();
@@ -162,6 +166,20 @@ export class Player {
     }
 
     if (this.position.y < -8) this.spawn(this.position.x, this.position.z);
+  }
+
+  /** Lift the player clear of solid blocks, falling back to the surface. */
+  unstick() {
+    const startY = this.position.y;
+    for (let i = 1; i <= 8; i++) {
+      this.position.y = Math.floor(startY) + i;
+      if (!this.intersects()) {
+        this.velocity.set(0, 0, 0);
+        this.onGround = false;
+        return;
+      }
+    }
+    this.spawn(Math.floor(this.position.x), Math.floor(this.position.z));
   }
 
   /** Returns true if the move was blocked and reverted. */

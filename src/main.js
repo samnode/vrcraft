@@ -251,24 +251,31 @@ function gatherDesktopInput() {
 }
 
 function toggleFlight() {
+  // Flight is a creative-mode tool; survival is meant to be walked.
+  if (survival.enabled) { survival.note('No flying in survival'); return; }
   player.flying = !player.flying;
   player.velocity.set(0, 0, 0);
   survival.note(player.flying ? 'Flight on' : 'Flight off');
 }
 
-function toggleCreative() {
-  const creative = !inventory.creative;
+function setCreative(creative) {
+  if (inventory.creative === creative) return;
   inventory.setCreative(creative);
   survival.enabled = !creative;
-  if (!creative) { survival.revive(); player.flying = false; }
+  if (!creative) {
+    // Survival starts you whole, on foot, and with an empty inventory to fill.
+    survival.revive();
+    player.flying = false;
+  }
   survival.note(creative ? 'Creative mode' : 'Survival mode');
+  if (typeof refreshModeButton === 'function') refreshModeButton();
 }
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') e.preventDefault();
   keys.add(e.code);
   if (e.code === 'KeyF') toggleFlight();
-  if (e.code === 'KeyC') toggleCreative();
+  if (e.code === 'KeyC') setCreative(!inventory.creative);
   if (e.code === 'Escape') mouse.locked = false;
   const digit = e.code.match(/^Digit([1-9])$/);
   if (digit) inventory.select(Number(digit[1]) - 1);
@@ -329,6 +336,16 @@ desktopButton.textContent = 'PLAY IN BROWSER';
 stylizeEntryButton(desktopButton);
 entry.appendChild(desktopButton);
 
+// Mode is chosen here, before entering, because a headset session has no DOM.
+const modeButton = document.createElement('button');
+stylizeEntryButton(modeButton);
+function refreshModeButton() {
+  modeButton.textContent = inventory.creative ? 'MODE: CREATIVE' : 'MODE: SURVIVAL';
+}
+refreshModeButton();
+modeButton.addEventListener('click', () => setCreative(!inventory.creative));
+entry.appendChild(modeButton);
+
 /**
  * The entry row and help panel are up only while you are not playing. The VR
  * button's own visibility stays three's to manage, so it keeps hiding itself
@@ -388,6 +405,12 @@ window.addEventListener('resize', () => {
 // Overrides used by the debug handle to drive the game without real input.
 const debug = { input: null, forceActive: false };
 
+const pointer = {
+  raycaster: new THREE.Raycaster(),
+  hoverSlot: -1,
+  pressed: false,
+};
+
 const rayOrigin = new THREE.Vector3();
 const rayDirection = new THREE.Vector3();
 const forward = new THREE.Vector3(0, 0, -1);
@@ -431,6 +454,11 @@ function frame(dt) {
     camera.position.set(0, 1.62, 0);
   }
 
+  // Aiming the right controller at the wrist panel picks a block rather than
+  // mining, so the two uses of the trigger never collide.
+  const overPanel = inVr ? updatePanelPointer(input) : -1;
+  if (overPanel >= 0) input.breaking = false;
+
   survival.update(dt, player);
   survival.tickMessages(dt);
   player.update(dt, input);
@@ -454,11 +482,42 @@ function frame(dt) {
       hunger: survival.hunger,
       messages: survival.messages,
       mode: inventory.creative ? 'Creative' : 'Survival',
+      hoverSlot: pointer.hoverSlot,
       clock: formatClock(survival.time),
     });
   }
 
   renderer.render(scene, camera);
+}
+
+/**
+ * Returns the hovered hotbar slot, or -1. A trigger press while hovering selects
+ * that block; the press is edge-detected so one pull picks exactly one block.
+ */
+function updatePanelPointer(input) {
+  pointer.hoverSlot = -1;
+  const right = controllerByHand('right');
+  if (!right || !hud.panel.visible || !hud.panel.parent) return -1;
+
+  right.getWorldPosition(rayOrigin);
+  rayDirection.copy(forward).applyQuaternion(right.getWorldQuaternion(new THREE.Quaternion()));
+  pointer.raycaster.set(rayOrigin, rayDirection.normalize());
+  pointer.raycaster.far = 1.2;                       // arm's length only
+
+  // Raycaster reads matrixWorld directly and will not refresh it itself.
+  hud.panel.updateWorldMatrix(true, false);
+  const hit = pointer.raycaster.intersectObject(hud.panel, false)[0];
+  if (!hit || !hit.uv) { pointer.pressed = input.breaking; return -1; }
+
+  const slot = hud.slotAtUV(hit.uv.x, hit.uv.y);
+  pointer.hoverSlot = slot;
+
+  if (slot >= 0 && input.breaking && !pointer.pressed) {
+    inventory.select(slot);
+    sfx.pickup();
+  }
+  pointer.pressed = input.breaking;
+  return slot;
 }
 
 function updateSky() {
@@ -511,6 +570,7 @@ window.VRCRAFT = {
   /** Feed a synthetic input object, or pass null to return to real input. */
   setInput(input) { debug.input = input; },
   setActive(on) { debug.forceActive = on; },
+  setCreative,
   look(yaw, pitch = 0) { mouse.yaw = yaw; mouse.pitch = pitch; },
   setTime(t) { survival.time = t; },
   stats() {
