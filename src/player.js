@@ -116,15 +116,12 @@ export class Player {
   }
 
   applyTurn(radians) {
-    // Rotate the rig about the head so a snap turn does not also shift the body.
-    const head = new THREE.Vector3();
-    this.camera.getWorldPosition(head);
+    // `position` already tracks the head's horizontal location, so turning about
+    // the head is just a yaw change — syncRig repositions the rig to match. Head
+    // drift is measured in rig-local space and rotated by the current yaw, so a
+    // turn needs no tracking reset; resetting every frame during a smooth turn
+    // would discard room-scale movement for as long as the stick was held.
     this.yaw += radians;
-    const offset = this._tmp.copy(this.position).sub(head).setY(0);
-    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), radians);
-    this.position.set(head.x + offset.x, this.position.y, head.z + offset.z);
-    this.lastHeadLocal.set(0, 0);
-    this.headTracked = false;
   }
 
   /** Horizontal distance the headset moved on its own since the last frame. */

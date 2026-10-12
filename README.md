@@ -66,7 +66,7 @@ only way to start a run in survival; on desktop `C` swaps at any time.
 | Action | VR | Desktop |
 | --- | --- | --- |
 | Move | Left stick | `W` `A` `S` `D` |
-| Look / turn | Head, right stick to snap turn | Mouse |
+| Look / turn | Head, right stick to turn | Mouse |
 | Break / attack | Right trigger | Left click |
 | Place / eat | Left trigger or either grip | Right click |
 | Jump | `A` | `Space` |
@@ -76,6 +76,11 @@ only way to start a run in survival; on desktop `C` swaps at any time.
 | Toggle flight (creative) | `Y` | `F` |
 | Fly up / down | `A` / right stick down | `Space` / `Ctrl` |
 | Creative ↔ survival | Choose on the start screen | `C` |
+
+Stick turning is continuous rather than snapped, at 120°/s with a squared
+response curve so small nudges aim finely. Continuous rotation is the less
+comfortable of the two options in VR — if it makes you queasy, lower or raise
+`TURN_SPEED` in `src/main.js`, which is the only constant involved.
 
 The hotbar lives on your left wrist in VR. Aim the right controller at it and the
 slot under your pointer highlights; pull the trigger to select that block. Mining

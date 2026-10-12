@@ -17,7 +17,10 @@ import { block } from './blocks.js';
 import { sfx } from './sfx.js';
 import { SEA_LEVEL } from './world.js';
 
-const SNAP_TURN = THREE.MathUtils.degToRad(30);
+// Continuous stick turning. Raise for faster rotation; some people find anything
+// above ~160 deg/s uncomfortable in a headset.
+const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at full deflection
+const TURN_DEADZONE = 0.15;
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -173,7 +176,7 @@ function controllerByHand(hand) {
 
 const keys = new Set();
 const mouse = { yaw: 0, pitch: 0, breaking: false, placing: false, locked: false };
-const edge = { snap: 0, prev: {} };
+const edge = { prev: {} };
 
 function pressedOnce(name, down) {
   const was = !!edge.prev[name];
@@ -181,7 +184,7 @@ function pressedOnce(name, down) {
   return down && !was;
 }
 
-function gatherVrInput() {
+function gatherVrInput(dt) {
   const left = controllerByHand('left');
   const right = controllerByHand('right');
   const padOf = (c) => (c && c.userData.inputSource && c.userData.inputSource.gamepad) || null;
@@ -217,11 +220,13 @@ function gatherVrInput() {
       else if (ty > 0.5) input.sneak = true;
     }
 
+    // Smooth turn, with the deflection curved so small nudges aim finely and the
+    // stick still reaches full speed at the rim.
     const tx = rp.axes[2] ?? 0;
-    if (Math.abs(tx) > 0.65) {
-      if (edge.snap === 0) { input.turn = -Math.sign(tx) * SNAP_TURN; edge.snap = Math.sign(tx); }
-    } else if (Math.abs(tx) < 0.3) {
-      edge.snap = 0;
+    const mag = Math.abs(tx);
+    if (mag > TURN_DEADZONE) {
+      const scaled = (mag - TURN_DEADZONE) / (1 - TURN_DEADZONE);
+      input.turn = -Math.sign(tx) * scaled * scaled * TURN_SPEED * dt;
     }
   }
 
@@ -440,7 +445,7 @@ function render() {
 function frame(dt) {
   const inVr = renderer.xr.isPresenting;
   const active = inVr || mouse.locked || debug.forceActive;
-  const input = debug.input ?? (inVr ? gatherVrInput() : gatherDesktopInput());
+  const input = debug.input ?? (inVr ? gatherVrInput(dt) : gatherDesktopInput());
 
   if (!active) {
     input.move.x = input.move.z = 0;
