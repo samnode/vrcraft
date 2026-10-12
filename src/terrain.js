@@ -1,9 +1,9 @@
 // Streams chunks in and out around the player and keeps mesh rebuilds inside a
 // per-frame time budget, so generating terrain never stalls a VR frame.
 
-import * as THREE from '../vendor/three/three.module.js';
-import { World, SX, SZ, chunkKey } from './world.js';
-import { buildChunkGeometry, createTerrainMaterials } from './mesher.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { World, SX, SZ, chunkKey } from './world.js?v=7';
+import { buildChunkGeometry, createTerrainMaterials } from './mesher.js?v=7';
 
 export class Terrain {
   constructor(scene, atlas, opts = {}) {

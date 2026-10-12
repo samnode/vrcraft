@@ -1,8 +1,8 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js';
-import { TILES } from './blocks.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { TILES } from './blocks.js?v=7';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 7;

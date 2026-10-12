@@ -1,14 +1,14 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js';
-import { raycastVoxel } from './raycast.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { raycastVoxel } from './raycast.js?v=7';
 import {
   AIR, LEAVES, APPLE, block, isItem, isLiquid, isSolid,
   miningTime, canHarvest, attackDamage,
-} from './blocks.js';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js';
-import { sfx } from './sfx.js';
+} from './blocks.js?v=7';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=7';
+import { sfx } from './sfx.js?v=7';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;

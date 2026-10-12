@@ -6,8 +6,8 @@
 // and then the rig is repositioned to honour the result. Walking into a real wall
 // therefore pushes the rig back instead of letting the head clip through.
 
-import * as THREE from '../vendor/three/three.module.js';
-import { isSolid, isLiquid } from './blocks.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { isSolid, isLiquid } from './blocks.js?v=7';
 
 const WIDTH = 0.6, HEIGHT = 1.8;
 const GRAVITY = 26;

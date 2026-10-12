@@ -1,24 +1,24 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=7';
 
-import { buildAtlas, blockCubeGeometry } from './textures.js';
-import { Terrain } from './terrain.js';
-import { Player } from './player.js';
-import { Inventory } from './inventory.js';
-import { Survival } from './survival.js';
-import { Mobs } from './mobs.js';
-import { Interactor } from './interact.js';
-import { Particles } from './fx.js';
-import { Hud, formatClock } from './ui.js';
-import { CraftUI } from './craftui.js';
-import { RECIPES, craft, nearbyStations } from './crafting.js';
-import { Sky } from './sky.js';
-import { block } from './blocks.js';
-import { sfx } from './sfx.js';
-import { SEA_LEVEL } from './world.js';
+import { buildAtlas, blockCubeGeometry } from './textures.js?v=7';
+import { Terrain } from './terrain.js?v=7';
+import { Player } from './player.js?v=7';
+import { Inventory } from './inventory.js?v=7';
+import { Survival } from './survival.js?v=7';
+import { Mobs } from './mobs.js?v=7';
+import { Interactor } from './interact.js?v=7';
+import { Particles } from './fx.js?v=7';
+import { Hud, formatClock } from './ui.js?v=7';
+import { CraftUI } from './craftui.js?v=7';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=7';
+import { Sky } from './sky.js?v=7';
+import { block } from './blocks.js?v=7';
+import { sfx } from './sfx.js?v=7';
+import { SEA_LEVEL } from './world.js?v=7';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -26,7 +26,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 6 — crafting';
+const BUILD = 'build 7';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');

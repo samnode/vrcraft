@@ -1,10 +1,10 @@
 // One canvas HUD, drawn once per frame and shown two ways: as a CSS overlay on
 // desktop, and as a texture on a wrist panel in VR (where DOM is invisible).
 
-import * as THREE from '../vendor/three/three.module.js';
-import { block } from './blocks.js';
-import { tileRect } from './textures.js';
-import { MAX_HEALTH, MAX_HUNGER } from './survival.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { block } from './blocks.js?v=7';
+import { tileRect } from './textures.js?v=7';
+import { MAX_HEALTH, MAX_HUNGER } from './survival.js?v=7';
 
 const W = 768, H = 300;
 const SLOT = 54, SLOT_GAP = 6;

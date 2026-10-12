@@ -187,6 +187,26 @@ streaming can never blow a frame.
 If you want more view distance, raise `VIEW_CHUNKS` in `src/main.js`. On a PC that
 can go to 8 or more comfortably; on Quest, 4–5 is the sweet spot.
 
+## Releasing
+
+GitHub Pages serves assets with `max-age=600` and gives no way to change that.
+Without versioned URLs a returning visitor can end up with a freshly fetched
+module next to a cached one — and if an export moved between them the page dies
+with a module error rather than just behaving like the old build. So every import
+specifier carries a `?v=N`, which makes each release a distinct set of URLs: a
+browser either keeps the whole old graph or fetches the whole new one.
+
+Bump it before pushing:
+
+```bash
+python3 release.py 8
+```
+
+That rewrites every import across `src/`, the script tag in `index.html`, and the
+`BUILD` string shown in the help panel — which is how you confirm a headset is
+running the build you think it is. The query lives in the specifier string, which
+relative resolution preserves, so this needs no bundler and no import map.
+
 ## Tweaking
 
 The world seed is the `seed` option passed to `Terrain` in `src/main.js`. Block

@@ -10,7 +10,7 @@ import {
   GLASS, SAND, WOOD_PICK, STONE_PICK, IRON_PICK, WOOD_AXE, STONE_AXE, IRON_AXE,
   WOOD_SHOVEL, STONE_SHOVEL, IRON_SHOVEL, WOOD_SWORD, STONE_SWORD, IRON_SWORD,
   block,
-} from './blocks.js';
+} from './blocks.js?v=7';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });

@@ -4,7 +4,7 @@
 // block in the game is one click away. Survival gives nine slots that fill from
 // what you mine, with real stack counts.
 
-import { CREATIVE_PALETTE, SURVIVAL_SLOTS, block } from './blocks.js';
+import { CREATIVE_PALETTE, SURVIVAL_SLOTS, block } from './blocks.js?v=7';
 
 const STACK_MAX = 64;
 

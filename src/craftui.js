@@ -2,10 +2,10 @@
 // a DOM overlay on desktop, and a textured quad floating in front of you in VR
 // that the right controller points at.
 
-import * as THREE from '../vendor/three/three.module.js';
-import { block } from './blocks.js';
-import { tileRect } from './textures.js';
-import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js';
+import * as THREE from '../vendor/three/three.module.js?v=7';
+import { block } from './blocks.js?v=7';
+import { tileRect } from './textures.js?v=7';
+import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=7';
 
 const W = 720, H = 700;
 const ROW_H = 52, ROW_GAP = 4;
