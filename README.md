@@ -4,12 +4,19 @@ A voxel sandbox for WebXR — build, mine, and survive the night, in a headset o
 a browser window. No build step, no npm, no bundler: it is plain ES modules plus a
 vendored copy of three.js, so any static file server will run it.
 
+🎮 **[Play it live →](https://samnode.github.io/vrcraft/)**
+
 Targeted at Meta Quest 2/3/Pro in the Quest Browser, with a full keyboard-and-mouse
 fallback for development.
 
 ## Running it
 
-Any static server works. From this directory:
+**On a Quest, the quickest route is the live link above.** Open
+`samnode.github.io/vrcraft` in the Meta Quest Browser and tap **ENTER VR** — Pages
+serves it over HTTPS, which is the secure context WebXR requires, so there is
+nothing to install and no cable involved.
+
+To run your own copy, any static server works. From this directory:
 
 ```bash
 python3 -m http.server 8860
@@ -17,9 +24,10 @@ python3 -m http.server 8860
 
 Then open <http://localhost:8860> and click **Play in browser**.
 
-### On a Quest
+### Serving it to a Quest yourself
 
-WebXR only runs in a *secure context*. `http://localhost` qualifies; a plain
+Only needed if you are running modified code rather than the live link. WebXR
+requires a *secure context*: `http://localhost` qualifies, a plain
 `http://192.168.x.x` does not. Two ways to get there:
 
 **USB, no certificate warnings (recommended).** With Developer Mode on and the
@@ -40,8 +48,8 @@ python3 serve-https.py
 
 It prints an `https://<your-lan-ip>:8443` address to open in the headset.
 
-Deploying to any HTTPS static host (GitHub Pages, Netlify, Cloudflare Pages) also
-works — commit the directory as-is.
+Any HTTPS static host works the same way — this repo is served straight from
+`main` by GitHub Pages, with no build step and nothing to configure.
 
 ## Controls
 
