@@ -1,8 +1,8 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=9';
-import { TILES } from './blocks.js?v=9';
+import * as THREE from '../vendor/three/three.module.js?v=10';
+import { TILES } from './blocks.js?v=10';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
@@ -524,5 +524,90 @@ export function blockCubeGeometry(faces) {
     }
   }
   uv.needsUpdate = true;
+  return geo;
+}
+
+/**
+ * One geometry out of a list of axis-aligned boxes, each with its own colour
+ * baked into vertex colours. Mob and held-item models are built this way so a
+ * whole model costs a single draw call. Parts may carry `rot: [x, y, z]`, which
+ * is applied about the part's own centre before it is moved into place.
+ */
+export function mergeBoxes(parts) {
+  const pos = [], norm = [], col = [];
+  for (const part of parts) {
+    const g = new THREE.BoxGeometry(...part.size).toNonIndexed();
+    if (part.rot) {
+      g.rotateX(part.rot[0]);
+      g.rotateY(part.rot[1]);
+      g.rotateZ(part.rot[2]);
+    }
+    g.translate(...part.pos);
+    const p = g.attributes.position.array, n = g.attributes.normal.array;
+    const c = new THREE.Color(part.color);
+    for (let i = 0; i < p.length; i += 3) {
+      pos.push(p[i], p[i + 1], p[i + 2]);
+      norm.push(n[i], n[i + 1], n[i + 2]);
+      col.push(c.r, c.g, c.b);
+    }
+    g.dispose();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+// Extruded item icons, cached by tile: an icon is rebuilt only the first time
+// something is picked up, and from then on every hand shares the geometry.
+const iconCache = new Map();
+
+/**
+ * A flat item icon turned into a solid: every opaque pixel becomes a box of
+ * that colour, runs of one colour merged along each row. This is what makes a
+ * carrot or an ingot look like an object in your fist rather than a sticker.
+ */
+export function iconGeometry(canvas, tileIndex, size = 0.16, depth = 0.024) {
+  const cached = iconCache.get(tileIndex);
+  if (cached) return cached;
+
+  const { x, y, w, h } = tileRect(tileIndex);
+  const data = canvas.getContext('2d', { willReadFrequently: true })
+    .getImageData(x, y, w, h).data;
+  const STEP = 2;                                  // 32px tiles read as 16 cells
+  const cols = w / STEP, rows = h / STEP;
+  const cell = size / cols;
+  const parts = [];
+
+  // Colours are quantised before comparing, or the per-pixel grain in the atlas
+  // would break every row into single-cell boxes.
+  const at = (col, row) => {
+    const i = ((row * STEP) * w + col * STEP) * 4;
+    if (data[i + 3] < 128) return -1;
+    return ((data[i] & 0xf8) << 16) | ((data[i + 1] & 0xf8) << 8) | (data[i + 2] & 0xf8);
+  };
+
+  for (let row = 0; row < rows; row++) {
+    let start = -1, color = -1;
+    for (let col = 0; col <= cols; col++) {
+      const here = col < cols ? at(col, row) : -1;
+      if (here === color) continue;
+      if (color !== -1) {
+        const n = col - start;
+        parts.push({
+          size: [cell * n, cell, depth],
+          pos: [(start + n / 2 - cols / 2) * cell, (rows / 2 - row - 0.5) * cell, 0],
+          color,
+        });
+      }
+      start = col;
+      color = here;
+    }
+  }
+
+  const geo = parts.length ? mergeBoxes(parts) : new THREE.BufferGeometry();
+  iconCache.set(tileIndex, geo);
   return geo;
 }

@@ -162,6 +162,12 @@ is pushed back rather than letting your head pass through the blocks.
   crafting table or furnace is within four blocks of you.
 - **Mobs** — eight kinds: four passive animals, plus zombies, arrow-firing
   skeletons, creepers that detonate and destroy terrain, and fast night spiders.
+- **Hands** — whatever you have selected is held in your right fist and modelled
+  in 3D: tools and the bow out of boxes, full blocks as a textured cube, and
+  everything else as its icon extruded into a solid. In VR the hand rides the
+  controller's grip space rather than its aim ray, so a pickaxe points out of
+  your fist and not down your laser. On desktop the same models are drawn as a
+  view model that swings when you mine and bobs when you walk.
 - **Lighting** — per-voxel sky and block light with flood-fill propagation, plus
   per-vertex ambient occlusion. The two light types are tinted separately in the
   shader: sunlight cools and dims towards night while torchlight stays warm, so a
@@ -198,6 +204,7 @@ src/
   blocks.js         Block and item registry, tool rules
   crafting.js       Recipes, station requirements, craft and smelt
   craftui.js        Crafting panel, shared by the desktop overlay and VR
+  held.js           First-person hands and the model of whatever you are holding
   sky.js            Sky dome, sun, moon, clouds, stars
   textures.js       Procedurally painted texture atlas (no image files)
   raycast.js        Voxel DDA for aiming

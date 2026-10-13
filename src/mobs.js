@@ -1,37 +1,15 @@
 // Pigs and zombies. Each mob type is baked into a single merged, vertex-coloured
 // geometry so one mob costs one draw call — important with a Quest frame budget.
 
-import * as THREE from '../vendor/three/three.module.js?v=9';
+import * as THREE from '../vendor/three/three.module.js?v=10';
 import {
   isSolid, PORKCHOP, BEEF, RAW_CHICKEN, LEATHER, FEATHER, BONE, STRING,
   ARROW, GUNPOWDER, AIR, block,
-} from './blocks.js?v=9';
-import { SEA_LEVEL, SY } from './world.js?v=9';
-import { rand2 } from './noise.js?v=9';
-import { sfx } from './sfx.js?v=9';
-
-/** Merge axis-aligned boxes into one geometry, colour baked into the vertices. */
-function mergeBoxes(parts) {
-  const pos = [], norm = [], col = [];
-  for (const part of parts) {
-    const g = new THREE.BoxGeometry(...part.size).toNonIndexed();
-    g.translate(...part.pos);
-    const p = g.attributes.position.array, n = g.attributes.normal.array;
-    const c = new THREE.Color(part.color);
-    for (let i = 0; i < p.length; i += 3) {
-      pos.push(p[i], p[i + 1], p[i + 2]);
-      norm.push(n[i], n[i + 1], n[i + 2]);
-      col.push(c.r, c.g, c.b);
-    }
-    g.dispose();
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  geo.computeBoundingSphere();
-  return geo;
-}
+} from './blocks.js?v=10';
+import { SEA_LEVEL, SY } from './world.js?v=10';
+import { rand2 } from './noise.js?v=10';
+import { sfx } from './sfx.js?v=10';
+import { mergeBoxes } from './textures.js?v=10';
 
 const PIG = () => mergeBoxes([
   { size: [0.62, 0.56, 0.95], pos: [0, 0.58, 0],      color: 0xeea6a0 },  // body

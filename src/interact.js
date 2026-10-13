@@ -1,14 +1,14 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=9';
-import { raycastVoxel } from './raycast.js?v=9';
+import * as THREE from '../vendor/three/three.module.js?v=10';
+import { raycastVoxel } from './raycast.js?v=10';
 import {
   AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW,
   block, isItem, isLiquid, isSolid, isDoor, miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=9';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=9';
-import { sfx } from './sfx.js?v=9';
+} from './blocks.js?v=10';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=10';
+import { sfx } from './sfx.js?v=10';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -29,6 +29,10 @@ export class Interactor {
     this.placeTimer = 0;
     this.hitTimer = 0;
     this.digSoundTimer = 0;
+    // Read by the held-item models: `swinging` is a trigger held on something
+    // breakable, `swingPulse` counts one-off actions worth an arm swing.
+    this.swinging = false;
+    this.swingPulse = 0;
 
     const box = new THREE.BoxGeometry(1.002, 1.002, 1.002);
     this.outline = new THREE.LineSegments(
@@ -57,6 +61,7 @@ export class Interactor {
     this.placeTimer = Math.max(0, this.placeTimer - dt);
     this.hitTimer = Math.max(0, this.hitTimer - dt);
     this.digSoundTimer = Math.max(0, this.digSoundTimer - dt);
+    this.swinging = false;
 
     if (ray) this.lastRay = { origin: ray.origin.clone(), direction: ray.direction.clone() };
     const hit = ray ? raycastVoxel(this.world, ray.origin, ray.direction, REACH) : null;
@@ -70,6 +75,7 @@ export class Interactor {
         // A sword hits far harder than a fist, which is the point of making one.
         this.mobs.hurt(mobHit.mob, attackDamage(this.inventory.heldTool()));
         this.particles.burst(mobHit.mob.center, 0xcc3333, 8, 2.2);
+        this.swingPulse++;
         sfx.hit();
       }
       return;
@@ -82,10 +88,17 @@ export class Interactor {
       this.progress = 0;
     }
 
-    if (input.breaking) this.mine(dt, hit);
-    else this.progress = Math.max(0, this.progress - dt * 2);
+    if (input.breaking) {
+      this.mine(dt, hit);
+      this.swinging = true;
+    } else this.progress = Math.max(0, this.progress - dt * 2);
 
-    if (input.placing && this.placeTimer === 0) this.place(hit);
+    if (input.placing && this.placeTimer === 0) {
+      this.place(hit);
+      // Every successful action sets a cooldown, so a rise here means something
+      // happened: a block went down, food was eaten, a door swung.
+      if (this.placeTimer > 0) this.swingPulse++;
+    }
 
     this.refreshVisuals();
   }

@@ -1,24 +1,25 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=9';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=9';
+import * as THREE from '../vendor/three/three.module.js?v=10';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=10';
 
-import { buildAtlas, blockCubeGeometry } from './textures.js?v=9';
-import { Terrain } from './terrain.js?v=9';
-import { Player } from './player.js?v=9';
-import { Inventory } from './inventory.js?v=9';
-import { Survival } from './survival.js?v=9';
-import { Mobs } from './mobs.js?v=9';
-import { Interactor } from './interact.js?v=9';
-import { Particles } from './fx.js?v=9';
-import { Hud, formatClock } from './ui.js?v=9';
-import { CraftUI } from './craftui.js?v=9';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=9';
-import { Sky } from './sky.js?v=9';
-import { block } from './blocks.js?v=9';
-import { sfx } from './sfx.js?v=9';
-import { SEA_LEVEL } from './world.js?v=9';
+import { buildAtlas } from './textures.js?v=10';
+import { HeldItem, offHandMesh } from './held.js?v=10';
+import { Terrain } from './terrain.js?v=10';
+import { Player } from './player.js?v=10';
+import { Inventory } from './inventory.js?v=10';
+import { Survival } from './survival.js?v=10';
+import { Mobs } from './mobs.js?v=10';
+import { Interactor } from './interact.js?v=10';
+import { Particles } from './fx.js?v=10';
+import { Hud, formatClock } from './ui.js?v=10';
+import { CraftUI } from './craftui.js?v=10';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=10';
+import { Sky } from './sky.js?v=10';
+import { block } from './blocks.js?v=10';
+import { sfx } from './sfx.js?v=10';
+import { SEA_LEVEL } from './world.js?v=10';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -26,7 +27,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 9';
+const BUILD = 'build 10';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -124,32 +125,38 @@ function respawn() {
 // ---------------------------------------------------------------- controllers
 
 const controllers = [];
-const heldCube = { mesh: null, id: 0 };
+const grips = [];
+
+// What you are carrying, held in the right fist. Barely any swing or bob in VR:
+// your real arm is doing that, and moving the virtual hand off the tracked one
+// is what makes a held object feel like it is lagging behind you.
+const vrHand = new HeldItem(atlas, { swing: 0.22, bob: 0, tracked: true });
 
 for (let i = 0; i < 2; i++) {
+  // Two spaces per controller: the aim ray wants where you are pointing, a held
+  // object wants where your hand actually is. WebXR exposes them separately.
   const controller = renderer.xr.getController(i);
+  const grip = renderer.xr.getControllerGrip(i);
   controller.addEventListener('connected', (event) => {
     controller.userData.inputSource = event.data;
     controller.userData.hand = event.data.handedness;
-    buildControllerVisual(controller, event.data.handedness);
+    grip.userData.hand = event.data.handedness;
+    buildControllerVisual(controller, grip, event.data.handedness);
   });
   controller.addEventListener('disconnected', () => {
     controller.userData.inputSource = null;
     controller.clear();
+    grip.clear();
   });
   rig.add(controller);
+  rig.add(grip);
   controllers.push(controller);
+  grips.push(grip);
 }
 
-function buildControllerVisual(controller, handedness) {
+function buildControllerVisual(controller, grip, handedness) {
   controller.clear();
-
-  const grip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.045, 0.045, 0.13),
-    new THREE.MeshLambertMaterial({ color: 0x9a7b5a }),
-  );
-  grip.position.set(0, -0.01, 0.04);
-  controller.add(grip);
+  grip.clear();
 
   if (handedness === 'right') {
     // Aiming ray: short, thin, and dimmed so it does not dominate the view.
@@ -161,34 +168,42 @@ function buildControllerVisual(controller, handedness) {
     }));
     line.scale.z = 6;
     controller.add(line);
+    // A grip space is already fist-shaped: origin in the palm, -z out along
+    // whatever you are holding. The model is authored to match, so it mounts
+    // with no fitting at all.
+    grip.add(vrHand.group);
   } else {
+    // The wrist panel stays in the controller space it was tuned for; only the
+    // hand moves to the grip, which is where a hand belongs.
     controller.add(hud.panel);
     hud.panel.visible = renderer.xr.isPresenting;
-    if (heldCube.mesh) heldCube.mesh.geometry.dispose();
-    heldCube.id = 0;                                  // force a refresh next frame
-    heldCube.mesh = new THREE.Mesh(
-      blockCubeGeometry(block(inventory.slots[0].id || 1).faces),
-      new THREE.MeshLambertMaterial({ map: atlas.texture }),
-    );
-    heldCube.mesh.scale.setScalar(0.09);
-    heldCube.mesh.position.set(0.0, 0.03, -0.14);
-    heldCube.mesh.rotation.set(0.3, 0.6, 0);
-    controller.add(heldCube.mesh);
+    grip.add(offHandMesh());
   }
-}
-
-function refreshHeldCube() {
-  const id = inventory.selectedSlot.id;
-  if (!heldCube.mesh || id === heldCube.id) return;
-  heldCube.id = id;
-  heldCube.mesh.visible = !!id;
-  if (!id) return;
-  heldCube.mesh.geometry.dispose();
-  heldCube.mesh.geometry = blockCubeGeometry(block(id).faces);
 }
 
 function controllerByHand(hand) {
   return controllers.find((c) => c.userData.hand === hand) || null;
+}
+
+// ---------------------------------------------------------------- view model
+
+// Outside VR there is no tracked hand, so the same models are drawn into a
+// second, tiny scene laid over the frame. That overlay pass is why the tool
+// never clips into a wall you are standing against.
+const viewHand = new HeldItem(atlas, { swing: 1, bob: 1, tilt: -0.55 });
+const viewScene = new THREE.Scene();
+const viewCamera = new THREE.PerspectiveCamera(70, 1, 0.01, 2);
+const viewSun = new THREE.DirectionalLight(0xffffff, 1.5);
+viewSun.position.set(-0.4, 0.8, 0.6);
+const viewAmbient = new THREE.HemisphereLight(0xcfe3ff, 0x4a4436, 0.8);
+viewScene.add(viewSun, viewAmbient, viewHand.group);
+viewHand.group.position.set(0.28, -0.33, -0.58);
+viewHand.group.rotation.set(0.15, -0.55, -0.35);
+
+function refreshHands() {
+  const id = inventory.selectedSlot ? inventory.selectedSlot.id : 0;
+  vrHand.setItem(id);
+  viewHand.setItem(id);
 }
 
 // ---------------------------------------------------------------- input
@@ -479,11 +494,15 @@ renderer.xr.addEventListener('sessionend', () => {
   hud.panel.visible = false;
 });
 
-window.addEventListener('resize', () => {
+window.addEventListener('resize', resize);
+function resize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  viewCamera.aspect = camera.aspect;
+  viewCamera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-});
+}
+resize();
 
 // ---------------------------------------------------------------- frame loop
 
@@ -506,6 +525,8 @@ let hudTimer = 0;
 // so this is the number that tells the two apart in a headset.
 const frameTimes = [];
 let fps = 0, worstFrameMs = 0;
+let lastSwingPulse = 0;
+let worldCalls = 0, worldTriangles = 0;
 
 function aimRay() {
   if (renderer.xr.isPresenting) {
@@ -575,7 +596,8 @@ function frame(dt) {
   mobs.update(dt, player);
   interactor.update(dt, active ? aimRay() : null, input);
   particles.update(dt);
-  refreshHeldCube();
+  refreshHands();
+  updateHands(dt, inVr);
   updateSky(dt);
 
   hudTimer -= dt;
@@ -597,6 +619,32 @@ function frame(dt) {
   }
 
   renderer.render(scene, camera);
+  // renderer.info resets on every render call, so the world's numbers have to
+  // be read before the overlay pass overwrites them.
+  worldCalls = renderer.info.render.calls;
+  worldTriangles = renderer.info.render.triangles;
+
+  if (!inVr) {
+    // Drawn over the finished frame with a fresh depth buffer, so the hand sits
+    // in front of the world no matter how close you stand to a block.
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(viewScene, viewCamera);
+    renderer.autoClear = true;
+  }
+}
+
+/** Feeds both hands the same swing signals; only the live one is on screen. */
+function updateHands(dt, inVr) {
+  const pulse = interactor.swingPulse !== lastSwingPulse;
+  lastSwingPulse = interactor.swingPulse;
+  const speed = Math.hypot(player.velocity.x, player.velocity.z) * (player.onGround ? 1 : 0);
+  const signal = { swinging: interactor.swinging, pulse, speed };
+  vrHand.update(dt, signal);
+  if (inVr) return;
+  // The crafting panel floats where the hand would be drawn over it.
+  viewHand.group.visible = !craftUI.open;
+  viewHand.update(dt, signal);
 }
 
 /**
@@ -673,7 +721,8 @@ renderer.setAnimationLoop(render);
 // Debug handle: handy from the browser console, and used by the test harness.
 window.VRCRAFT = {
   renderer, scene, camera, rig, terrain, player, inventory, survival, mobs,
-  interactor, particles, hud, craftUI, sky, controllers, BUILD,
+  interactor, particles, hud, craftUI, sky, controllers, grips, BUILD,
+  vrHand, viewHand, viewCamera,
   setCraftingOpen, tryCraft, get stations() { return stations; },
   // Lets the VR input mapping be exercised without a headset: hand it a fake
   // gamepad through controllers[i].userData and call this directly.
@@ -691,8 +740,8 @@ window.VRCRAFT = {
     return {
       position: player.position.toArray().map((n) => +n.toFixed(2)),
       chunks: terrain.world.chunks.size,
-      drawCalls: renderer.info.render.calls,
-      triangles: renderer.info.render.triangles,
+      drawCalls: worldCalls,
+      triangles: worldTriangles,
       mobs: mobs.list.length,
       onGround: player.onGround,
       build: BUILD,
