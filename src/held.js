@@ -6,9 +6,9 @@
 // origin and its length running up +Y, so a mount only has to decide where the
 // hand is and which way the fist points.
 
-import * as THREE from '../vendor/three/three.module.js?v=10';
-import { block, isPlaceable, BOW } from './blocks.js?v=10';
-import { blockCubeGeometry, iconGeometry, mergeBoxes } from './textures.js?v=10';
+import * as THREE from '../vendor/three/three.module.js?v=14';
+import { block, isPlaceable, BOW } from './blocks.js?v=14';
+import { blockCubeGeometry, iconGeometry, mergeBoxes } from './textures.js?v=14';
 
 const SKIN = 0xc98f68;
 const CUFF = 0x2f5a93;
@@ -27,6 +27,13 @@ const HAND = [
   { size: [0.030, 0.034, 0.052], pos: [0.028, 0.040, -0.030], color: SKIN },  // thumb
   { size: [0.086, 0.070, 0.045], pos: [0, 0.006, 0.078],     color: CUFF },   // cuff
   { size: [0.076, 0.064, 0.170], pos: [0, 0.008, 0.183],     color: SLEEVE }, // forearm
+];
+
+// On screen the arm has to run off the bottom of the frame to read as yours,
+// which takes more limb than a tracked hand wants: in VR the arm ends where your
+// real one begins, and anything past that is a second elbow floating in your chest.
+const ARM_EXTENSION = [
+  { size: [0.082, 0.070, 0.300], pos: [0, 0.010, 0.415], color: SLEEVE },
 ];
 
 // Model geometry is shared between every hand and built once per item id: two
@@ -51,7 +58,10 @@ export function offHandMesh() {
 
 /** Boxes for a tool, handle up +Y with the head on top. */
 function toolParts(kind, metal) {
-  const shaft = { size: [0.024, 0.255, 0.024], pos: [0, 0.075, 0], color: WOOD };
+  // The shaft runs well below the grip on purpose: a handle that stops at the
+  // fist reads as stuck to the top of it, where one whose butt pokes out the
+  // bottom reads as gripped.
+  const shaft = { size: [0.030, 0.310, 0.030], pos: [0, 0.062, 0], color: WOOD };
   switch (kind) {
     case 'pickaxe': return [shaft,
       { size: [0.070, 0.032, 0.032], pos: [0, 0.206, 0], color: metal },
@@ -105,7 +115,9 @@ export class HeldItem {
    * tracked VR hand wants almost none, because your real arm is doing the work
    * and moving the virtual hand away from it reads as lag.
    */
-  constructor(atlas, { swing = 1, bob = 1, tilt = -Math.PI / 2 + 0.22, tracked = false } = {}) {
+  constructor(atlas, {
+    swing = 1, bob = 1, tilt = -Math.PI / 2 + 0.22, tracked = false, limb = [0, 0, 0],
+  } = {}) {
     this.atlas = atlas;
     this.swingScale = swing;
     this.bobScale = bob;
@@ -129,7 +141,18 @@ export class HeldItem {
       map: atlas.texture, transparent: true, opacity: 0.75,
     });
 
-    this.arm.add(new THREE.Mesh(cached('hand', () => mergeBoxes(HAND)), this.partsMaterial));
+    // The limb turns on its own, independently of what the fist is holding. A
+    // tracked hand leaves this at zero and the arm points straight back down the
+    // grip; on screen it swings out so the forearm leaves frame at the corner
+    // instead of vanishing end-on into the near plane.
+    const boxes = tracked ? HAND : [...HAND, ...ARM_EXTENSION];
+    this.limb = new THREE.Group();
+    this.limb.rotation.set(limb[0], limb[1], limb[2]);
+    this.limb.add(new THREE.Mesh(
+      cached(tracked ? 'hand' : 'armed-hand', () => mergeBoxes(boxes)),
+      this.partsMaterial,
+    ));
+    this.arm.add(this.limb);
 
     // Items are modelled along +Y; this turns that into "out of the fist". A
     // tracked hand wants that nearly square to the palm, a screen view model
@@ -184,6 +207,9 @@ export class HeldItem {
       // A bow is not gripped like a rod: whatever angle the item sits at, the
       // limbs stay upright across the fist.
       g.rotation.x = -this.itemRoot.rotation.x - 0.20;
+      // On screen the fist is also rolled towards you, and the stave has to roll
+      // back by the same amount or the bow lies on its side across the view.
+      if (!this.tracked) g.rotation.z = 0.45;
       return g;
     }
 
@@ -196,8 +222,10 @@ export class HeldItem {
         cached(`cube${id}`, () => blockCubeGeometry(def.faces)),
         def.blend ? this.glassMaterial : this.blockMaterial,
       );
-      cube.scale.setScalar(0.12);
-      cube.position.set(-0.02, 0.12, 0.02);
+      cube.scale.setScalar(0.135);
+      // Low enough that the fist overlaps its near-bottom corner. Floated clear
+      // of the hand it reads as a block following you around, not one you hold.
+      cube.position.set(-0.01, 0.055, 0.01);
       // Turned so a corner leads and the top face shows: three faces visible is
       // what tells grass from dirt at a glance.
       cube.rotation.set(0.45, 0.6, 0);

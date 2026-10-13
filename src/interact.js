@@ -1,14 +1,15 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=10';
-import { raycastVoxel } from './raycast.js?v=10';
+import * as THREE from '../vendor/three/three.module.js?v=14';
+import { raycastVoxel } from './raycast.js?v=14';
 import {
-  AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW,
-  block, isItem, isLiquid, isSolid, isDoor, miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=10';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=10';
-import { sfx } from './sfx.js?v=10';
+  AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW, BED_HEAD,
+  block, isItem, isLiquid, isSolid, isDoor, isBed, bedPartnerId,
+  miningTime, canHarvest, attackDamage,
+} from './blocks.js?v=14';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=14';
+import { sfx } from './sfx.js?v=14';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -147,6 +148,11 @@ export class Interactor {
       const other = this.doorPartner(hit.x, hit.y, hit.z);
       if (other !== null) this.world.set(hit.x, other, hit.z, AIR);
     }
+    // And so is a bed, lying down rather than standing up.
+    if (isBed(hit.id)) {
+      const other = this.bedPartner(hit.x, hit.y, hit.z, hit.id);
+      if (other) this.world.set(other[0], hit.y, other[1], AIR);
+    }
 
     const center = new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
     this.particles.burst(center, this.particleColor(hit.id), 16, 3.0);
@@ -225,10 +231,36 @@ export class Interactor {
       return;
     }
 
+    if (def.long) {
+      // Two cells long, laid out along whichever way you are facing. The far
+      // cell has to be clear before either is written, same as a door's.
+      const [dx, dz] = this.facingStep();
+      const hx = x + dx, hz = z + dz;
+      const far = this.world.get(hx, y, hz);
+      if (far !== AIR && !isLiquid(far)) {
+        if (this.onNotify) this.onNotify('Not enough room for a bed');
+        return;
+      }
+      if (this.overlapsPlayer(hx, y, hz)) return;
+      if (!this.world.set(x, y, z, id)) return;
+      this.world.set(hx, y, hz, BED_HEAD);
+      this.inventory.consumeSelected();
+      this.placeTimer = PLACE_COOLDOWN;
+      sfx.place();
+      return;
+    }
+
     if (!this.world.set(x, y, z, id)) return;
     this.inventory.consumeSelected();
     this.placeTimer = PLACE_COOLDOWN;
     sfx.place();
+  }
+
+  /** The gaze flattened to one of the four compass steps. */
+  facingStep() {
+    const { fwd } = this.player.headingBasis();
+    if (Math.abs(fwd.x) >= Math.abs(fwd.z)) return [fwd.x >= 0 ? 1 : -1, 0];
+    return [0, fwd.z >= 0 ? 1 : -1];
   }
 
   /** Doors swing; beds carry you to morning if it is actually night. */
@@ -251,6 +283,16 @@ export class Interactor {
       sfx.sleep();
       if (this.onNotify) this.onNotify('Good morning');
     }
+  }
+
+  /** The [x, z] of this bed's other half, or null if it stands alone. */
+  bedPartner(x, y, z, id) {
+    const partner = bedPartnerId(id);
+    const steps = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx, dz] of steps) {
+      if (this.world.get(x + dx, y, z + dz) === partner) return [x + dx, z + dz];
+    }
+    return null;
   }
 
   /** The y of this door's other half, or null if it somehow stands alone. */

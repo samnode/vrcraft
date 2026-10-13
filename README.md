@@ -107,6 +107,13 @@ clear cells and fills both, using either half swings the whole thing, and breaki
 either half takes both. The upper half reads its facing from the lower half's
 neighbours, so the two can never end up pointing different ways.
 
+A bed is the same idea lying down: two blocks long, laid out along whichever way
+you are facing when you place it. It is built as a mattress on four stubby legs
+with its top at nine pixels, Minecraft's own proportions rather than a plain
+slab, and the pillow always sits at the head end whichever of the four ways the
+bed runs. Placing needs both cells clear, and using or breaking either half acts
+on the whole bed.
+
 Tools matter, exactly as they do in Minecraft:
 
 - **Speed** — the right tool class is several times faster. Stone takes 1.5s with
@@ -121,7 +128,7 @@ Tools matter, exactly as they do in Minecraft:
 
 | Action | VR | Desktop |
 | --- | --- | --- |
-| Move | Left stick | `W` `A` `S` `D` |
+| Move | Left stick | Arrow keys |
 | Look / turn | Head, right stick to turn | Mouse |
 | Break / attack | Right trigger | Left click |
 | Place / eat | Left trigger or either grip | Right click |
@@ -167,7 +174,10 @@ is pushed back rather than letting your head pass through the blocks.
   everything else as its icon extruded into a solid. In VR the hand rides the
   controller's grip space rather than its aim ray, so a pickaxe points out of
   your fist and not down your laser. On desktop the same models are drawn as a
-  view model that swings when you mine and bobs when you walk.
+  view model that swings when you mine and bobs when you walk: the arm enters
+  from the bottom-right corner, the fist is rolled towards you, and the tool's
+  handle runs through the grip rather than sitting on top of it, so it reads as
+  held rather than floating.
 - **Lighting** — per-voxel sky and block light with flood-fill propagation, plus
   per-vertex ambient occlusion. The two light types are tinted separately in the
   shader: sunlight cools and dims towards night while torchlight stays warm, so a

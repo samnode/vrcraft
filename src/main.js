@@ -1,25 +1,25 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=10';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=10';
+import * as THREE from '../vendor/three/three.module.js?v=14';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=14';
 
-import { buildAtlas } from './textures.js?v=10';
-import { HeldItem, offHandMesh } from './held.js?v=10';
-import { Terrain } from './terrain.js?v=10';
-import { Player } from './player.js?v=10';
-import { Inventory } from './inventory.js?v=10';
-import { Survival } from './survival.js?v=10';
-import { Mobs } from './mobs.js?v=10';
-import { Interactor } from './interact.js?v=10';
-import { Particles } from './fx.js?v=10';
-import { Hud, formatClock } from './ui.js?v=10';
-import { CraftUI } from './craftui.js?v=10';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=10';
-import { Sky } from './sky.js?v=10';
-import { block } from './blocks.js?v=10';
-import { sfx } from './sfx.js?v=10';
-import { SEA_LEVEL } from './world.js?v=10';
+import { buildAtlas } from './textures.js?v=14';
+import { HeldItem, offHandMesh } from './held.js?v=14';
+import { Terrain } from './terrain.js?v=14';
+import { Player } from './player.js?v=14';
+import { Inventory } from './inventory.js?v=14';
+import { Survival } from './survival.js?v=14';
+import { Mobs } from './mobs.js?v=14';
+import { Interactor } from './interact.js?v=14';
+import { Particles } from './fx.js?v=14';
+import { Hud, formatClock } from './ui.js?v=14';
+import { CraftUI } from './craftui.js?v=14';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=14';
+import { Sky } from './sky.js?v=14';
+import { block } from './blocks.js?v=14';
+import { sfx } from './sfx.js?v=14';
+import { SEA_LEVEL } from './world.js?v=14';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -27,7 +27,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 10';
+const BUILD = 'build 14';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -190,15 +190,18 @@ function controllerByHand(hand) {
 // Outside VR there is no tracked hand, so the same models are drawn into a
 // second, tiny scene laid over the frame. That overlay pass is why the tool
 // never clips into a wall you are standing against.
-const viewHand = new HeldItem(atlas, { swing: 1, bob: 1, tilt: -0.55 });
+const viewHand = new HeldItem(atlas, { swing: 1, bob: 1, tilt: -0.68, limb: [0.80, 0.52, -0.95] });
 const viewScene = new THREE.Scene();
 const viewCamera = new THREE.PerspectiveCamera(70, 1, 0.01, 2);
 const viewSun = new THREE.DirectionalLight(0xffffff, 1.5);
 viewSun.position.set(-0.4, 0.8, 0.6);
 const viewAmbient = new THREE.HemisphereLight(0xcfe3ff, 0x4a4436, 0.8);
 viewScene.add(viewSun, viewAmbient, viewHand.group);
-viewHand.group.position.set(0.28, -0.33, -0.58);
-viewHand.group.rotation.set(0.15, -0.55, -0.35);
+// Tuned by eye against the frame: the forearm has to leave the bottom-right
+// corner and the fist has to sit low enough that the tool crosses open view,
+// not the HUD.
+viewHand.group.position.set(0.21, -0.17, -0.48);
+viewHand.group.rotation.set(0.14, -0.50, -0.30);
 
 function refreshHands() {
   const id = inventory.selectedSlot ? inventory.selectedSlot.id : 0;
@@ -283,10 +286,12 @@ function gatherDesktopInput() {
     placing: mouse.placing,
     turn: 0,
   };
-  if (keys.has('KeyW')) input.move.z += 1;
-  if (keys.has('KeyS')) input.move.z -= 1;
-  if (keys.has('KeyD')) input.move.x += 1;
-  if (keys.has('KeyA')) input.move.x -= 1;
+  // Arrow keys are the documented controls. WASD stays wired up as a silent
+  // alias, because unlearning it costs anyone who already plays that way.
+  if (keys.has('ArrowUp') || keys.has('KeyW')) input.move.z += 1;
+  if (keys.has('ArrowDown') || keys.has('KeyS')) input.move.z -= 1;
+  if (keys.has('ArrowRight') || keys.has('KeyD')) input.move.x += 1;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) input.move.x -= 1;
   return input;
 }
 
@@ -345,7 +350,8 @@ function setCreative(creative) {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Tab') e.preventDefault();
+  // Arrows scroll the page by default, which drags the canvas out from under you.
+  if (e.code === 'Tab' || e.code.startsWith('Arrow')) e.preventDefault();
   keys.add(e.code);
   if (e.code === 'KeyF') toggleFlight();
   if (e.code === 'KeyE') setCraftingOpen(!craftUI.open);

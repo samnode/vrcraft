@@ -13,7 +13,7 @@ import {
   BEEF, COOKED_BEEF, PORKCHOP, COOKED_PORK, RAW_CHICKEN, COOKED_CHICKEN,
   STRING, FEATHER, ARROW, BOW, BONE,
   block,
-} from './blocks.js?v=10';
+} from './blocks.js?v=14';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });

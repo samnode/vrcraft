@@ -17,7 +17,8 @@ export const TILES = [
   'axe_wood', 'axe_stone', 'axe_iron',
   'shovel_wood', 'shovel_stone', 'shovel_iron',
   'sword_wood', 'sword_stone', 'sword_iron',
-  'wool', 'door', 'door_top', 'ladder', 'bed',
+  'wool', 'door', 'door_top', 'ladder',
+  'bed_top_head', 'bed_top_foot', 'bed_side_head', 'bed_side_foot', 'bed_bottom', 'bed_item',
   'beef', 'cooked_beef', 'cooked_pork', 'raw_chicken', 'cooked_chicken',
   'leather', 'feather', 'bone', 'string', 'arrow', 'bow', 'gunpowder',
 ];
@@ -54,6 +55,11 @@ function def(id, name, opts) {
     // Blocks two cells tall. The upper half is the same id, drawn with topTile.
     tall: opts.tall ?? false,
     topTile: opts.topTile ?? null,
+    // Blocks two cells long, laid out horizontally as a pair of distinct ids.
+    long: opts.long ?? false,
+    // Per-part tiles for shapes the mesher textures face by face rather than
+    // from `faces`, which stays the flat icon used by the hotbar and the hand.
+    parts: opts.parts ?? null,
     material: opts.material ?? MAT.NONE,
     // Minimum tool tier for this block to drop anything. 0 means bare hands.
     requiresTier: opts.requiresTier ?? 0,
@@ -118,7 +124,15 @@ export const WOOL        = add(def(42, 'Wool',       { all: tile.wool, hardness:
 export const DOOR_CLOSED = add(def(43, 'Door', { all: tile.door, topTile: tile.door_top, tall: true, hardness: 0.8, material: MAT.WOOD, opaque: false, shape: 'panel', use: 'door' }));
 export const DOOR_OPEN   = add(def(44, 'Door', { all: tile.door, topTile: tile.door_top, tall: true, hardness: 0.8, material: MAT.WOOD, opaque: false, solid: false, shape: 'panel', use: 'door', drop: 43 }));
 export const LADDER      = add(def(45, 'Ladder',     { all: tile.ladder, hardness: 0.4, material: MAT.WOOD, opaque: false, solid: false, shape: 'panel' }));
-export const BED         = add(def(46, 'Bed',        { all: tile.bed, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'slab', use: 'bed' }));
+// A bed is two cells long: BED is the foot you place, BED_HEAD the half that
+// follows it. Two ids rather than one is what lets each half find the other and
+// work out which way the bed runs without any per-block metadata.
+const BED_PARTS = {
+  topHead: tile.bed_top_head, topFoot: tile.bed_top_foot,
+  sideHead: tile.bed_side_head, sideFoot: tile.bed_side_foot,
+  bottom: tile.bed_bottom,
+};
+export const BED         = add(def(46, 'Bed',        { all: tile.bed_item, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'bed', use: 'bed', long: true, parts: BED_PARTS }));
 export const STONE_SLAB  = add(def(47, 'Stone Slab', { all: tile.cobble, hardness: 1.5, material: MAT.STONE, requiresTier: 1, opaque: false, shape: 'slab' }));
 export const WOOD_SLAB   = add(def(48, 'Wood Slab',  { all: tile.planks, hardness: 0.8, material: MAT.WOOD, opaque: false, shape: 'slab' }));
 
@@ -136,8 +150,15 @@ export const ARROW           = add(def(58, 'Arrow',           { all: tile.arrow,
 export const BOW             = add(def(59, 'Bow',             { all: tile.bow,             item: true }));
 export const GUNPOWDER       = add(def(60, 'Gunpowder',       { all: tile.gunpowder,       item: true }));
 
+// Never placed from the hand or listed anywhere: it only ever appears next to a
+// BED that was just placed, and breaks with it.
+export const BED_HEAD = add(def(61, 'Bed', { all: tile.bed_item, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'bed', use: 'bed', drop: 46, parts: BED_PARTS }));
+
 export function block(id) { return BLOCKS[id]; }
 export function isDoor(id) { return id === 43 || id === 44; }
+export function isBed(id) { return id === 46 || id === 61; }
+/** The other half of a bed: foot pairs with head and back again. */
+export function bedPartnerId(id) { return id === 46 ? 61 : 46; }
 export function isOpaque(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].opaque; }
 export function isSolid(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].solid; }
 export function isLiquid(id) { return id === WATER; }
@@ -182,6 +203,7 @@ export const BLEND_LUT = new Uint8Array(256);
 export const POST_LUT = new Uint8Array(256);
 export const SLAB_LUT = new Uint8Array(256);
 export const PANEL_LUT = new Uint8Array(256);
+export const BED_LUT = new Uint8Array(256);
 export const CLIMB_LUT = new Uint8Array(256);
 export const LIQUID_LUT = new Uint8Array(256);
 export const VARY_LUT = new Uint8Array(256);
@@ -194,6 +216,7 @@ for (let i = 1; i < BLOCKS.length; i++) {
   POST_LUT[i] = b.shape === 'post' ? 1 : 0;
   SLAB_LUT[i] = b.shape === 'slab' ? 1 : 0;
   PANEL_LUT[i] = b.shape === 'panel' ? 1 : 0;
+  BED_LUT[i] = b.shape === 'bed' ? 1 : 0;
   LIQUID_LUT[i] = b.liquid ? 1 : 0;
   VARY_LUT[i] = b.varyTexture ? 1 : 0;
 }

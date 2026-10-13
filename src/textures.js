@@ -1,12 +1,12 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=10';
-import { TILES } from './blocks.js?v=10';
+import * as THREE from '../vendor/three/three.module.js?v=14';
+import { TILES } from './blocks.js?v=14';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
-export const ATLAS_ROWS = 7;
+export const ATLAS_ROWS = 8;
 
 // Deterministic per-pixel jitter so tiles look grainy rather than flat.
 function px(x, y, salt) {
@@ -38,6 +38,28 @@ function blobs(ctx, ox, oy, color, count, size, salt) {
     ctx.fillStyle = color;
     ctx.fillRect(ox + bx, oy + by, s, s);
   }
+}
+
+const BED_RED = [168, 48, 48];
+const BED_LINEN = [233, 230, 220];
+const BED_TIMBER = [107, 74, 40];
+
+/** grainy() over a sub-rectangle, for bands inside a tile rather than whole tiles. */
+function grainy2(ctx, ox, oy, w, h, base, amount, salt) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const n = (px(x, y, salt) - 0.5) * amount;
+      ctx.fillStyle = rgb(base[0] + base[0] * n, base[1] + base[1] * n, base[2] + base[2] * n);
+      ctx.fillRect(ox + x, oy + y, 1, 1);
+    }
+  }
+}
+
+/** The timber rail along the bottom of a bed's side, below the mattress. */
+function bedRail(ctx, ox, oy) {
+  grainy2(ctx, ox, oy + 23, TILE_PX, 9, BED_TIMBER, 0.14, 60);
+  ctx.fillStyle = 'rgba(60,38,18,0.55)';
+  ctx.fillRect(ox, oy + 23, TILE_PX, 1);
 }
 
 const painters = {
@@ -293,14 +315,65 @@ const painters = {
     ctx.fillStyle = '#b08a52';
     for (let y = 5; y < TILE_PX; y += 9) ctx.fillRect(ox + 4, oy + y, TILE_PX - 8, 3);
   },
-  bed(ctx, ox, oy) {
-    ctx.fillStyle = '#b03a3a';
-    ctx.fillRect(ox, oy, TILE_PX, TILE_PX);
-    grainy(ctx, ox, oy, [176, 58, 58], 0.1, 53);
-    ctx.fillStyle = '#f2eee4';                      // pillow
-    ctx.fillRect(ox + 4, oy + 3, TILE_PX - 8, 9);
-    ctx.fillStyle = 'rgba(120,36,36,0.6)';
-    ctx.fillRect(ox, oy + TILE_PX - 4, TILE_PX, 4);
+  // Bed tiles. The two tops are drawn with the head end towards the top of the
+  // tile and rotated into place by the mesher; the sides are deliberately
+  // symmetric left-to-right so they can be used on all four walls of a half
+  // without ever needing to know which way round they are.
+  bed_top_foot(ctx, ox, oy) {
+    grainy(ctx, ox, oy, BED_RED, 0.12, 53);
+    ctx.fillStyle = 'rgba(120,30,30,0.45)';         // quilt seams
+    ctx.fillRect(ox + 2, oy, 1, TILE_PX);
+    ctx.fillRect(ox + TILE_PX - 3, oy, 1, TILE_PX);
+    ctx.fillRect(ox, oy + TILE_PX - 7, TILE_PX, 1);
+    ctx.fillStyle = 'rgba(226,116,116,0.30)';       // hem at the foot end
+    ctx.fillRect(ox, oy + TILE_PX - 5, TILE_PX, 2);
+  },
+  bed_top_head(ctx, ox, oy) {
+    grainy(ctx, ox, oy, BED_RED, 0.12, 54);
+    ctx.fillStyle = 'rgba(120,30,30,0.45)';
+    ctx.fillRect(ox + 2, oy, 1, TILE_PX);
+    ctx.fillRect(ox + TILE_PX - 3, oy, 1, TILE_PX);
+    grainy2(ctx, ox + 3, oy + 2, TILE_PX - 6, 13, BED_LINEN, 0.07, 55);   // pillow
+    ctx.fillStyle = 'rgba(150,146,134,0.55)';       // pillow shadow onto the quilt
+    ctx.fillRect(ox + 3, oy + 15, TILE_PX - 6, 2);
+    ctx.fillStyle = 'rgba(226,116,116,0.28)';       // turned-down quilt edge
+    ctx.fillRect(ox, oy + 18, TILE_PX, 2);
+  },
+  bed_side_foot(ctx, ox, oy) {
+    grainy(ctx, ox, oy, BED_RED, 0.12, 56);
+    ctx.fillStyle = 'rgba(120,30,30,0.45)';
+    ctx.fillRect(ox, oy + 19, TILE_PX, 2);
+    bedRail(ctx, ox, oy);
+  },
+  bed_side_head(ctx, ox, oy) {
+    grainy(ctx, ox, oy, BED_RED, 0.12, 57);
+    grainy2(ctx, ox, oy, TILE_PX, 10, BED_LINEN, 0.07, 58);               // pillow edge
+    ctx.fillStyle = 'rgba(150,146,134,0.5)';
+    ctx.fillRect(ox, oy + 10, TILE_PX, 1);
+    ctx.fillStyle = 'rgba(120,30,30,0.45)';
+    ctx.fillRect(ox, oy + 19, TILE_PX, 2);
+    bedRail(ctx, ox, oy);
+  },
+  // Underside and the four legs: bare frame timber.
+  bed_bottom(ctx, ox, oy) {
+    grainy(ctx, ox, oy, BED_TIMBER, 0.16, 59);
+    ctx.fillStyle = 'rgba(70,46,24,0.5)';
+    for (let y = 6; y < TILE_PX; y += 10) ctx.fillRect(ox, oy + y, TILE_PX, 1);
+  },
+  // Hotbar and in-hand icon: the whole bed seen from the side.
+  bed_item(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    ctx.fillStyle = '#5c3f21';                      // legs
+    ctx.fillRect(ox + 3, oy + 22, 4, 6);
+    ctx.fillRect(ox + TILE_PX - 7, oy + 22, 4, 6);
+    ctx.fillStyle = '#6b4a28';                      // frame rail
+    ctx.fillRect(ox + 2, oy + 18, TILE_PX - 4, 5);
+    ctx.fillStyle = '#a83030';                      // mattress
+    ctx.fillRect(ox + 2, oy + 10, TILE_PX - 4, 8);
+    ctx.fillStyle = '#c04040';
+    ctx.fillRect(ox + 2, oy + 10, TILE_PX - 4, 2);
+    ctx.fillStyle = '#e9e6dc';                      // pillow at the head end
+    ctx.fillRect(ox + 3, oy + 6, 11, 5);
   },
 };
 

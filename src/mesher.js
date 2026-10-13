@@ -5,13 +5,13 @@
 // Three buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
 // water (shimmers, drawn translucent) and other translucent blocks like glass.
 
-import * as THREE from '../vendor/three/three.module.js?v=10';
-import { SX, SY, SZ, idx } from './world.js?v=10';
+import * as THREE from '../vendor/three/three.module.js?v=14';
+import { SX, SY, SZ, idx } from './world.js?v=14';
 import {
   AIR, STONE, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
-  LIQUID_LUT, VARY_LUT, DOOR_OPEN, isDoor,
-} from './blocks.js?v=10';
-import { tileUV } from './textures.js?v=10';
+  LIQUID_LUT, VARY_LUT, BED_LUT, DOOR_OPEN, isDoor, bedPartnerId,
+} from './blocks.js?v=14';
+import { tileUV } from './textures.js?v=14';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
 const FACES = [
@@ -164,6 +164,10 @@ export function buildChunkGeometry(world, chunk) {
         if (id === AIR) continue;
         const def = block(id);
 
+        if (BED_LUT[id]) {
+          emitBed(opaqueBuf, id, def, lx, y, lz, ox, oz);
+          continue;
+        }
         if (POST_LUT[id] || SLAB_LUT[id] || PANEL_LUT[id]) {
           emitShape(opaqueBuf, id, def, lx, y, lz, ox, oz);
           continue;
@@ -283,24 +287,16 @@ function shapeBounds(id, lx, y, lz, isTop) {
 }
 
 /**
- * Emits a sub-cube: torches, slabs, doors and ladders. Every face is drawn, since
- * a shape smaller than its cell can never be fully hidden by its neighbours.
+ * One axis-aligned box inside a cell, textured face by face. `skip` names a face
+ * index to leave out, for a surface that is buried against another box.
  */
-function emitShape(buf, id, def, lx, y, lz, ox, oz) {
-  // A tall block's upper half is the same id sitting on its own kind.
-  const isTop = def.tall && isDoor(id) && isDoor(cache.vox[pidx(lx, y - 1, lz)]);
-  const faces = isTop && def.topTile !== null
-    ? [def.topTile, def.topTile, def.topTile, def.topTile, def.topTile, def.topTile]
-    : def.faces;
-  const [bx0, by0, bz0, bx1, by1, bz1] = shapeBounds(id, lx, y, lz, isTop);
-  const i0 = pidx(lx, y, lz);
-  const skyL = cache.sky[i0] / 15;
-  const blkL = Math.max(cache.blk[i0] / 15, def.light / 15);
-  const uvSet = QUAD_UV_ROT[0];
-
+function emitBox(buf, bounds, faces, rots, skyL, blkL, lx, y, lz, ox, oz, skip) {
+  const [bx0, by0, bz0, bx1, by1, bz1] = bounds;
   for (let f = 0; f < 6; f++) {
+    if (f === skip) continue;
     const face = FACES[f];
     const [u0, v0, u1, v1] = tileUV(faces[f]);
+    const uvSet = QUAD_UV_ROT[rots ? rots[f] : 0];
     buf.ensure();
     const base = buf.verts;
     for (let i = 0; i < 4; i++) {
@@ -315,6 +311,98 @@ function emitShape(buf, id, def, lx, y, lz, ox, oz) {
       );
     }
     buf.quad(base);
+  }
+}
+
+/**
+ * Emits a sub-cube: torches, slabs, doors and ladders. Every face is drawn, since
+ * a shape smaller than its cell can never be fully hidden by its neighbours.
+ */
+function emitShape(buf, id, def, lx, y, lz, ox, oz) {
+  // A tall block's upper half is the same id sitting on its own kind.
+  const isTop = def.tall && isDoor(id) && isDoor(cache.vox[pidx(lx, y - 1, lz)]);
+  const faces = isTop && def.topTile !== null
+    ? [def.topTile, def.topTile, def.topTile, def.topTile, def.topTile, def.topTile]
+    : def.faces;
+  const i0 = pidx(lx, y, lz);
+  emitBox(
+    buf, shapeBounds(id, lx, y, lz, isTop), faces, null,
+    cache.sky[i0] / 15, Math.max(cache.blk[i0] / 15, def.light / 15),
+    lx, y, lz, ox, oz, -1,
+  );
+}
+
+// Minecraft's proportions: the mattress sits on legs three pixels tall and its
+// top lands at nine pixels, which is why a bed is not simply a slab.
+const BED_LEG = 3 / 16;
+const BED_TOP = 9 / 16;
+
+// Directions searched for the other half, and the face index each one points at.
+const BED_DIRS = [
+  [1, 0, 0], [-1, 0, 1], [0, 1, 4], [0, -1, 5],
+];
+
+/**
+ * Which way this bed runs, as the step towards its other half plus the face
+ * index that step points at. Reading it off the partner means neither half can
+ * disagree with the other about the bed's axis, and costs no per-block metadata
+ * — the same trick the doors use against their walls.
+ */
+function bedJoint(id, lx, y, lz) {
+  const partner = bedPartnerId(id);
+  for (let i = 0; i < 4; i++) {
+    const [dx, dz, f] = BED_DIRS[i];
+    if (cache.vox[pidx(lx + dx, y, lz + dz)] === partner) return BED_DIRS[i];
+  }
+  return null;
+}
+
+// Top-face UV rotation per direction of the bed's head, keyed by the face index
+// of the step from foot to head, so the pillow always lies at the head end.
+// Derived from FACES[2]'s winding: the top quad's corners run (0,1) (1,1) (0,0)
+// (1,0) in xz, and v=1 is the painted top of the tile, which is the pillow.
+const BED_TOP_ROT = { 0: 2, 1: 0, 4: 1, 5: 3 };
+
+/**
+ * A bed half: a mattress box on two legs, with the face against the other half
+ * left out so the two do not z-fight along their shared seam.
+ */
+function emitBed(buf, id, def, lx, y, lz, ox, oz) {
+  const parts = def.parts;
+  const isHead = id === 61;
+  // An orphaned half — carved out by an explosion, say — still has to draw as
+  // something, so it falls back to lying along Z.
+  const joint = bedJoint(id, lx, y, lz) || [0, -1, 5];
+  const [jx, jz, jf] = joint;
+
+  // The step from foot to head: towards the partner from the foot, away from it
+  // from the head.
+  const headFace = isHead ? (jf ^ 1) : jf;
+  const side = isHead ? parts.sideHead : parts.sideFoot;
+  const top = isHead ? parts.topHead : parts.topFoot;
+  const faces = [side, side, top, parts.bottom, side, side];
+  const rots = [0, 0, BED_TOP_ROT[headFace], 0, 0, 0];
+
+  const i0 = pidx(lx, y, lz);
+  const skyL = cache.sky[i0] / 15;
+  const blkL = cache.blk[i0] / 15;
+
+  emitBox(buf, [0, BED_LEG, 0, 1, BED_TOP, 1], faces, rots,
+    skyL, blkL, lx, y, lz, ox, oz, jf);
+
+  // Two legs, at the outer end's corners, across whichever axis the bed is not
+  // running along.
+  const legs = parts.bottom;
+  const legFaces = [legs, legs, legs, legs, legs, legs];
+  const o0 = 0, o1 = BED_LEG, i1 = 1 - BED_LEG;
+  // The outer end is the cell edge away from the partner.
+  const ez0 = jz > 0 ? o0 : i1, ex0 = jx > 0 ? o0 : i1;
+  if (jx !== 0) {
+    emitBox(buf, [ex0, 0, o0, ex0 + BED_LEG, BED_LEG, o1], legFaces, null, skyL, blkL, lx, y, lz, ox, oz, -1);
+    emitBox(buf, [ex0, 0, i1, ex0 + BED_LEG, BED_LEG, 1], legFaces, null, skyL, blkL, lx, y, lz, ox, oz, -1);
+  } else {
+    emitBox(buf, [o0, 0, ez0, o1, BED_LEG, ez0 + BED_LEG], legFaces, null, skyL, blkL, lx, y, lz, ox, oz, -1);
+    emitBox(buf, [i1, 0, ez0, 1, BED_LEG, ez0 + BED_LEG], legFaces, null, skyL, blkL, lx, y, lz, ox, oz, -1);
   }
 }
 
