@@ -15,7 +15,7 @@ import {
   LEATHER_HELMET, LEATHER_CHEST, LEATHER_LEGS, LEATHER_BOOTS,
   IRON_HELMET, IRON_CHEST, IRON_LEGS, IRON_BOOTS,
   block,
-} from './blocks.js?v=16';
+} from './blocks.js?v=17';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });

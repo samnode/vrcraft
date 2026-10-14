@@ -1,25 +1,25 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=16';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=16';
+import * as THREE from '../vendor/three/three.module.js?v=17';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=17';
 
-import { buildAtlas } from './textures.js?v=16';
-import { HeldItem, offHandMesh } from './held.js?v=16';
-import { Terrain } from './terrain.js?v=16';
-import { Player } from './player.js?v=16';
-import { Inventory } from './inventory.js?v=16';
-import { Survival } from './survival.js?v=16';
-import { Mobs } from './mobs.js?v=16';
-import { Interactor } from './interact.js?v=16';
-import { Particles } from './fx.js?v=16';
-import { Hud, formatClock } from './ui.js?v=16';
-import { CraftUI } from './craftui.js?v=16';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=16';
-import { Sky } from './sky.js?v=16';
-import { block } from './blocks.js?v=16';
-import { sfx } from './sfx.js?v=16';
-import { SEA_LEVEL } from './world.js?v=16';
+import { buildAtlas } from './textures.js?v=17';
+import { HeldItem, offHandMesh } from './held.js?v=17';
+import { Terrain } from './terrain.js?v=17';
+import { Player } from './player.js?v=17';
+import { Inventory } from './inventory.js?v=17';
+import { Survival } from './survival.js?v=17';
+import { Mobs } from './mobs.js?v=17';
+import { Interactor } from './interact.js?v=17';
+import { Particles } from './fx.js?v=17';
+import { Hud, formatClock } from './ui.js?v=17';
+import { CraftUI } from './craftui.js?v=17';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=17';
+import { Sky } from './sky.js?v=17';
+import { block } from './blocks.js?v=17';
+import { sfx } from './sfx.js?v=17';
+import { SEA_LEVEL } from './world.js?v=17';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -27,7 +27,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 16';
+const BUILD = 'build 17';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');

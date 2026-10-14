@@ -6,9 +6,9 @@
 // origin and its length running up +Y, so a mount only has to decide where the
 // hand is and which way the fist points.
 
-import * as THREE from '../vendor/three/three.module.js?v=16';
-import { block, isPlaceable, BOW } from './blocks.js?v=16';
-import { blockCubeGeometry, iconGeometry, mergeBoxes } from './textures.js?v=16';
+import * as THREE from '../vendor/three/three.module.js?v=17';
+import { block, isPlaceable, BOW } from './blocks.js?v=17';
+import { blockCubeGeometry, iconGeometry, mergeBoxes } from './textures.js?v=17';
 
 const SKIN = 0xc98f68;
 const CUFF = 0x2f5a93;

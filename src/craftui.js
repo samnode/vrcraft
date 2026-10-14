@@ -2,10 +2,10 @@
 // a DOM overlay on desktop, and a textured quad floating in front of you in VR
 // that the right controller points at.
 
-import * as THREE from '../vendor/three/three.module.js?v=16';
-import { block } from './blocks.js?v=16';
-import { tileRect } from './textures.js?v=16';
-import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=16';
+import * as THREE from '../vendor/three/three.module.js?v=17';
+import { block } from './blocks.js?v=17';
+import { tileRect } from './textures.js?v=17';
+import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=17';
 
 const W = 1160, H = 700;
 const ROW_H = 52, ROW_GAP = 4;
@@ -33,9 +33,11 @@ export class CraftUI {
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.generateMipmaps = false;
 
-    // Floats at a comfortable reading distance ahead of the player in VR.
+    // Floats at a comfortable reading distance ahead of the player in VR. The
+    // quad grew with the canvas: four columns on the old 0.78m panel would have
+    // shrunk the recipe text by a fifth in the headset.
     this.panel = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.78, 0.78 * H / W),
+      new THREE.PlaneGeometry(0.88, 0.88 * H / W),
       new THREE.MeshBasicMaterial({ map: this.texture, transparent: true, depthTest: false }),
     );
     this.panel.renderOrder = 11;
@@ -65,7 +67,9 @@ export class CraftUI {
     if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
     dir.normalize();
     const head = camera.getWorldPosition(new THREE.Vector3());
-    this.panel.position.copy(head).addScaledVector(dir, 0.85).add(new THREE.Vector3(0, -0.1, 0));
+    // 0.88m wide at 0.76m puts the recipe text at exactly the angular size it had
+    // when the panel was three columns on a narrower canvas.
+    this.panel.position.copy(head).addScaledVector(dir, 0.76).add(new THREE.Vector3(0, -0.1, 0));
     this.panel.lookAt(head);
   }
 
