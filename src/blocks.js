@@ -21,6 +21,8 @@ export const TILES = [
   'bed_top_head', 'bed_top_foot', 'bed_side_head', 'bed_side_foot', 'bed_bottom', 'bed_item',
   'beef', 'cooked_beef', 'cooked_pork', 'raw_chicken', 'cooked_chicken',
   'leather', 'feather', 'bone', 'string', 'arrow', 'bow', 'gunpowder',
+  'leather_helmet', 'leather_chest', 'leather_legs', 'leather_boots',
+  'iron_helmet', 'iron_chest', 'iron_legs', 'iron_boots',
 ];
 
 const tile = {};
@@ -64,6 +66,9 @@ function def(id, name, opts) {
     // Minimum tool tier for this block to drop anything. 0 means bare hands.
     requiresTier: opts.requiresTier ?? 0,
     tool: opts.tool ?? null,     // {kind, tier, speed, damage} for tools
+    // {slot, points} for wearables. Four points is a tenth of the damage taken,
+    // matching Minecraft, so a full iron set turns aside 60% of a hit.
+    armor: opts.armor ?? null,
     // Blocks whose top face is randomly rotated per position to hide tiling.
     varyTexture: opts.varyTexture ?? false,
   };
@@ -150,6 +155,21 @@ export const ARROW           = add(def(58, 'Arrow',           { all: tile.arrow,
 export const BOW             = add(def(59, 'Bow',             { all: tile.bow,             item: true }));
 export const GUNPOWDER       = add(def(60, 'Gunpowder',       { all: tile.gunpowder,       item: true }));
 
+// ---------------------------------------------------------------- armour
+// Points are Minecraft's: a full leather set is 7, a full iron set 15.
+export const ARMOR_SLOTS = ['head', 'chest', 'legs', 'feet'];
+function armorDef(id, name, tileName, slot, points) {
+  return add(def(id, name, { all: tile[tileName], item: true, armor: { slot, points } }));
+}
+export const LEATHER_HELMET = armorDef(62, 'Leather Cap',     'leather_helmet', 'head',  1);
+export const LEATHER_CHEST  = armorDef(63, 'Leather Tunic',   'leather_chest',  'chest', 3);
+export const LEATHER_LEGS   = armorDef(64, 'Leather Trousers', 'leather_legs',  'legs',  2);
+export const LEATHER_BOOTS  = armorDef(65, 'Leather Boots',   'leather_boots',  'feet',  1);
+export const IRON_HELMET    = armorDef(66, 'Iron Helmet',     'iron_helmet',    'head',  2);
+export const IRON_CHEST     = armorDef(67, 'Iron Chestplate', 'iron_chest',     'chest', 6);
+export const IRON_LEGS      = armorDef(68, 'Iron Leggings',   'iron_legs',      'legs',  5);
+export const IRON_BOOTS     = armorDef(69, 'Iron Boots',      'iron_boots',     'feet',  2);
+
 // Never placed from the hand or listed anywhere: it only ever appears next to a
 // BED that was just placed, and breaks with it.
 export const BED_HEAD = add(def(61, 'Bed', { all: tile.bed_item, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'bed', use: 'bed', drop: 46, parts: BED_PARTS }));
@@ -157,6 +177,7 @@ export const BED_HEAD = add(def(61, 'Bed', { all: tile.bed_item, hardness: 0.4, 
 export function block(id) { return BLOCKS[id]; }
 export function isDoor(id) { return id === 43 || id === 44; }
 export function isBed(id) { return id === 46 || id === 61; }
+export function isArmor(id) { return id !== AIR && !!BLOCKS[id] && !!BLOCKS[id].armor; }
 /** The other half of a bed: foot pairs with head and back again. */
 export function bedPartnerId(id) { return id === 46 ? 61 : 46; }
 export function isOpaque(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].opaque; }

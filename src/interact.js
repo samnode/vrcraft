@@ -1,15 +1,15 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=14';
-import { raycastVoxel } from './raycast.js?v=14';
+import * as THREE from '../vendor/three/three.module.js?v=16';
+import { raycastVoxel } from './raycast.js?v=16';
 import {
   AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW, BED_HEAD,
-  block, isItem, isLiquid, isSolid, isDoor, isBed, bedPartnerId,
+  block, isItem, isArmor, isLiquid, isSolid, isDoor, isBed, bedPartnerId,
   miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=14';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=14';
-import { sfx } from './sfx.js?v=14';
+} from './blocks.js?v=16';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=16';
+import { sfx } from './sfx.js?v=16';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -197,6 +197,17 @@ export class Interactor {
     if (!id) return;
 
     if (id === BOW) { this.shoot(); return; }
+
+    if (isArmor(id)) {                                 // worn, not placed or eaten
+      this.placeTimer = 0.35;
+      if (this.inventory.equip(id)) {
+        sfx.place();
+        if (this.onNotify) this.onNotify(`Wearing ${block(id).name}`);
+      } else if (this.onNotify) {
+        this.onNotify('No room to swap that out');
+      }
+      return;
+    }
 
     if (isItem(id)) {                                  // food is eaten, not placed
       if (this.survival.enabled && this.survival.eat(id)) {

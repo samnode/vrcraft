@@ -11,9 +11,11 @@ import {
   WOOD_SHOVEL, STONE_SHOVEL, IRON_SHOVEL, WOOD_SWORD, STONE_SWORD, IRON_SWORD,
   WOOL, DOOR_CLOSED, LADDER, BED, STONE_SLAB, WOOD_SLAB,
   BEEF, COOKED_BEEF, PORKCHOP, COOKED_PORK, RAW_CHICKEN, COOKED_CHICKEN,
-  STRING, FEATHER, ARROW, BOW, BONE,
+  STRING, FEATHER, ARROW, BOW, BONE, LEATHER,
+  LEATHER_HELMET, LEATHER_CHEST, LEATHER_LEGS, LEATHER_BOOTS,
+  IRON_HELMET, IRON_CHEST, IRON_LEGS, IRON_BOOTS,
   block,
-} from './blocks.js?v=14';
+} from './blocks.js?v=16';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });
@@ -51,6 +53,17 @@ export const RECIPES = [
   // Ranged combat.
   r(BOW, 1, [[STICK, 3], [STRING, 3]], 'table'),
   r(ARROW, 4, [[STICK, 1], [FEATHER, 1], [COBBLE, 1]], 'table'),
+
+  // Armour. Leather comes off cows, iron out of the furnace, and the amounts are
+  // Minecraft's: a chestplate costs twice a pair of boots.
+  r(LEATHER_HELMET, 1, [[LEATHER, 5]], 'table'),
+  r(LEATHER_CHEST, 1, [[LEATHER, 8]], 'table'),
+  r(LEATHER_LEGS, 1, [[LEATHER, 7]], 'table'),
+  r(LEATHER_BOOTS, 1, [[LEATHER, 4]], 'table'),
+  r(IRON_HELMET, 1, [[IRON_INGOT, 5]], 'table'),
+  r(IRON_CHEST, 1, [[IRON_INGOT, 8]], 'table'),
+  r(IRON_LEGS, 1, [[IRON_INGOT, 7]], 'table'),
+  r(IRON_BOOTS, 1, [[IRON_INGOT, 4]], 'table'),
 
   // Smelting: a furnace plus coal for fuel.
   r(IRON_INGOT, 1, [[IRON_ORE, 1], [COAL, 1]], 'furnace'),

@@ -1,25 +1,25 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=14';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=14';
+import * as THREE from '../vendor/three/three.module.js?v=16';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=16';
 
-import { buildAtlas } from './textures.js?v=14';
-import { HeldItem, offHandMesh } from './held.js?v=14';
-import { Terrain } from './terrain.js?v=14';
-import { Player } from './player.js?v=14';
-import { Inventory } from './inventory.js?v=14';
-import { Survival } from './survival.js?v=14';
-import { Mobs } from './mobs.js?v=14';
-import { Interactor } from './interact.js?v=14';
-import { Particles } from './fx.js?v=14';
-import { Hud, formatClock } from './ui.js?v=14';
-import { CraftUI } from './craftui.js?v=14';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=14';
-import { Sky } from './sky.js?v=14';
-import { block } from './blocks.js?v=14';
-import { sfx } from './sfx.js?v=14';
-import { SEA_LEVEL } from './world.js?v=14';
+import { buildAtlas } from './textures.js?v=16';
+import { HeldItem, offHandMesh } from './held.js?v=16';
+import { Terrain } from './terrain.js?v=16';
+import { Player } from './player.js?v=16';
+import { Inventory } from './inventory.js?v=16';
+import { Survival } from './survival.js?v=16';
+import { Mobs } from './mobs.js?v=16';
+import { Interactor } from './interact.js?v=16';
+import { Particles } from './fx.js?v=16';
+import { Hud, formatClock } from './ui.js?v=16';
+import { CraftUI } from './craftui.js?v=16';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=16';
+import { Sky } from './sky.js?v=16';
+import { block } from './blocks.js?v=16';
+import { sfx } from './sfx.js?v=16';
+import { SEA_LEVEL } from './world.js?v=16';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -27,7 +27,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 14';
+const BUILD = 'build 16';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -66,7 +66,11 @@ const sky = new Sky(scene);
 
 // ---------------------------------------------------------------- game state
 
-const survival = new Survival({ onDeath: () => { sfx.hurt(); respawn(); } });
+// armorPoints is read lazily because the inventory is built just below this.
+const survival = new Survival({
+  onDeath: () => { sfx.hurt(); respawn(); },
+  armorPoints: () => inventory.armorPoints(),
+});
 const player = new Player(terrain.world, rig, camera);
 const inventory = new Inventory({ creative: true });
 const particles = new Particles(scene);
@@ -117,9 +121,12 @@ function findSpawn() {
 }
 
 function respawn() {
+  // Dying costs you what you were carrying and wearing. There is no item entity
+  // to drop it into, so it is gone rather than waiting where you fell.
+  const lost = inventory.clearAll();
   survival.revive();
   player.spawn(spawn.x, spawn.z);
-  survival.note('Respawned at your spawn point.');
+  survival.note(lost ? `Respawned. You lost ${lost} items.` : 'Respawned at your spawn point.');
 }
 
 // ---------------------------------------------------------------- controllers
@@ -617,6 +624,8 @@ function frame(dt) {
       survival: survival.enabled,
       health: survival.health,
       hunger: survival.hunger,
+      armor: inventory.armor,
+      armorPoints: inventory.armorPoints(),
       messages: survival.messages,
       mode: `${inventory.creative ? 'Creative' : 'Survival'}  ${fps} fps`,
       hoverSlot: pointer.hoverSlot,
@@ -756,6 +765,8 @@ window.VRCRAFT = {
       daylight: +survival.daylight.toFixed(2),
       health: survival.health,
       hunger: survival.hunger,
+      armor: inventory.armor,
+      armorPoints: inventory.armorPoints(),
     };
   },
 };

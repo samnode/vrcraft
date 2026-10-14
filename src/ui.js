@@ -1,10 +1,10 @@
 // One canvas HUD, drawn once per frame and shown two ways: as a CSS overlay on
 // desktop, and as a texture on a wrist panel in VR (where DOM is invisible).
 
-import * as THREE from '../vendor/three/three.module.js?v=14';
-import { block } from './blocks.js?v=14';
-import { tileRect } from './textures.js?v=14';
-import { MAX_HEALTH, MAX_HUNGER } from './survival.js?v=14';
+import * as THREE from '../vendor/three/three.module.js?v=16';
+import { block, ARMOR_SLOTS } from './blocks.js?v=16';
+import { tileRect } from './textures.js?v=16';
+import { MAX_HEALTH, MAX_HUNGER } from './survival.js?v=16';
 
 const W = 768, H = 300;
 const SLOT = 54, SLOT_GAP = 6;
@@ -59,7 +59,11 @@ export class Hud {
     ctx.clearRect(0, 0, W, H);
 
     this.drawMessages(ctx, state.messages);
-    if (state.survival) this.drawBars(ctx, state.health, state.hunger);
+    if (state.survival) {
+      this.drawBars(ctx, state.health, state.hunger);
+      // Like Minecraft, the armour row only appears once you have some.
+      if (state.armorPoints > 0) this.drawArmor(ctx, state.armorPoints, state.armor);
+    }
     this.drawHotbar(ctx, state.slots, state.selected, state.creative, state.hoverSlot);
     this.drawFooter(ctx, state);
 
@@ -90,6 +94,51 @@ export class Hud {
       const filled = hunger >= (i + 1) * 2 ? 1 : (hunger > i * 2 ? 0.5 : 0);
       this.icon(ctx, W - 86 - (MAX_HUNGER / 2 - 1 - i) * 24, y, filled, '#c98a3c', '#3d2a12');
     }
+  }
+
+  /**
+   * Protection worn: ten pips at two points each on the left, and the four
+   * pieces themselves mirrored opposite the hunger bar so you can see at a
+   * glance which slot is still bare.
+   */
+  drawArmor(ctx, points, armor) {
+    const y = 62;
+    for (let i = 0; i < 10; i++) {
+      const filled = points >= (i + 1) * 2 ? 1 : (points > i * 2 ? 0.5 : 0);
+      this.shield(ctx, 86 + i * 24, y, filled);
+    }
+    ARMOR_SLOTS.forEach((slot, i) => {
+      const x = W - 86 - (3 - i) * 28;
+      ctx.fillStyle = 'rgba(0,0,0,0.38)';
+      ctx.fillRect(x - 12, y - 12, 24, 24);
+      const id = armor[slot];
+      if (!id) return;
+      const r = tileRect(block(id).faces[2]);
+      ctx.drawImage(this.atlas, r.x, r.y, r.w, r.h, x - 11, y - 11, 22, 22);
+    });
+  }
+
+  /** One armour pip, drawn as a little shield. */
+  shield(ctx, x, y, filled) {
+    const plate = (r, color) => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x - r, y - r);
+      ctx.lineTo(x + r, y - r);
+      ctx.lineTo(x + r, y + r * 0.2);
+      ctx.quadraticCurveTo(x, y + r * 1.6, x - r, y + r * 0.2);
+      ctx.closePath();
+      ctx.fill();
+    };
+    plate(9, '#1a2130');
+    if (filled <= 0) return;
+    if (filled >= 1) { plate(6.5, '#ced6e6'); return; }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x - 9, y - 9, 9, 20);
+    ctx.clip();
+    plate(6.5, '#ced6e6');
+    ctx.restore();
   }
 
   /** Simple pip: empty, half or full. Shape doubles for hearts and hunger. */

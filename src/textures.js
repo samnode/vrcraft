@@ -1,12 +1,12 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=14';
-import { TILES } from './blocks.js?v=14';
+import * as THREE from '../vendor/three/three.module.js?v=16';
+import { TILES } from './blocks.js?v=16';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
-export const ATLAS_ROWS = 8;
+export const ATLAS_ROWS = 9;
 
 // Deterministic per-pixel jitter so tiles look grainy rather than flat.
 function px(x, y, salt) {
@@ -60,6 +60,52 @@ function bedRail(ctx, ox, oy) {
   grainy2(ctx, ox, oy + 23, TILE_PX, 9, BED_TIMBER, 0.14, 60);
   ctx.fillStyle = 'rgba(60,38,18,0.55)';
   ctx.fillRect(ox, oy + 23, TILE_PX, 1);
+}
+
+// Armour icons. Each piece is the same set of rectangles painted in a different
+// metal, so leather and iron read as the same gear in two materials.
+const LEATHER_TONES = [[139, 94, 60], 'rgba(198,146,100,0.6)', 'rgba(84,54,32,0.55)'];
+const IRON_TONES = [[196, 200, 208], 'rgba(244,247,252,0.65)', 'rgba(126,131,142,0.6)'];
+
+const ARMOR_SHAPES = {
+  helmet: {
+    fill: [[6, 7, 20, 6], [5, 13, 22, 8]],
+    hole: [[10, 15, 12, 6]],
+    hi: [[7, 8, 18, 2]],
+    shade: [[5, 19, 22, 2]],
+  },
+  chest: {
+    fill: [[9, 7, 14, 5], [7, 12, 18, 14], [3, 12, 5, 8], [24, 12, 5, 8]],
+    hole: [[13, 7, 6, 3]],
+    hi: [[8, 13, 16, 2]],
+    shade: [[7, 24, 18, 2]],
+  },
+  legs: {
+    fill: [[7, 5, 18, 8], [7, 13, 7, 14], [18, 13, 7, 14]],
+    hole: [],
+    hi: [[8, 6, 16, 2]],
+    shade: [[7, 11, 18, 2]],
+  },
+  boots: {
+    fill: [[5, 12, 9, 10], [4, 22, 11, 5], [18, 12, 9, 10], [17, 22, 11, 5]],
+    hole: [],
+    hi: [[5, 13, 9, 2], [18, 13, 9, 2]],
+    shade: [[4, 25, 11, 2], [17, 25, 11, 2]],
+  },
+};
+
+function armorIcon(shapeName, tones, salt) {
+  const shape = ARMOR_SHAPES[shapeName];
+  const [base, hi, shade] = tones;
+  return (ctx, ox, oy) => {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    for (const [x, y, w, h] of shape.fill) grainy2(ctx, ox + x, oy + y, w, h, base, 0.18, salt);
+    for (const [x, y, w, h] of shape.hole) ctx.clearRect(ox + x, oy + y, w, h);
+    ctx.fillStyle = hi;
+    for (const [x, y, w, h] of shape.hi) ctx.fillRect(ox + x, oy + y, w, h);
+    ctx.fillStyle = shade;
+    for (const [x, y, w, h] of shape.shade) ctx.fillRect(ox + x, oy + y, w, h);
+  };
 }
 
 const painters = {
@@ -375,6 +421,14 @@ const painters = {
     ctx.fillStyle = '#e9e6dc';                      // pillow at the head end
     ctx.fillRect(ox + 3, oy + 6, 11, 5);
   },
+  leather_helmet: armorIcon('helmet', LEATHER_TONES, 81),
+  leather_chest:  armorIcon('chest',  LEATHER_TONES, 82),
+  leather_legs:   armorIcon('legs',   LEATHER_TONES, 83),
+  leather_boots:  armorIcon('boots',  LEATHER_TONES, 84),
+  iron_helmet:    armorIcon('helmet', IRON_TONES, 85),
+  iron_chest:     armorIcon('chest',  IRON_TONES, 86),
+  iron_legs:      armorIcon('legs',   IRON_TONES, 87),
+  iron_boots:     armorIcon('boots',  IRON_TONES, 88),
 };
 
 // Small round or elongated item icons, all drawn the same way.

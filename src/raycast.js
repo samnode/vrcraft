@@ -1,7 +1,7 @@
 // Amanatides & Woo voxel DDA. Returns the first non-air voxel along the ray plus
 // the face normal, which is what block placement needs.
 
-import { AIR, isLiquid } from './blocks.js?v=14';
+import { AIR, isLiquid } from './blocks.js?v=16';
 
 export function raycastVoxel(world, origin, direction, maxDistance = 6, skipLiquid = true) {
   let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);

@@ -94,8 +94,9 @@ and sticks, build a crafting table, and the tool recipes open up. Mine stone for
 cobblestone, build a furnace, and smelt iron ore into ingots — and your meat into
 something worth eating.
 
-Thirty recipes in all. Beyond tools: doors, ladders, beds, wool, stone and wood
-slabs, and a bow with arrows for fighting back at range.
+Thirty-eight recipes in all. Beyond tools: doors, ladders, beds, wool, stone and
+wood slabs, a bow with arrows for fighting back at range, and two full sets of
+armour.
 
 Doors and beds are **used** rather than placed on: aim at one and press place
 (right-click, or the left trigger in VR). Doors swing open and shut; a bed carries
@@ -113,6 +114,27 @@ with its top at nine pixels, Minecraft's own proportions rather than a plain
 slab, and the pillow always sits at the head end whichever of the four ways the
 bed runs. Placing needs both cells clear, and using or breaking either half acts
 on the whole bed.
+
+## Armour and dying
+
+Two sets: leather off the cows, iron out of the furnace. A cap costs five, a
+chestplate eight, trousers seven and boots four, which are Minecraft's own
+numbers, and so is the protection — four percent of a hit turned aside per
+armour point, so a full leather set stops 28% and a full iron set 60%.
+Starving and falling out of the world ignore it, because no helmet ever helped
+with either.
+
+Armour is **worn**, not placed: select a piece and press place to put it on. It
+moves out of the hotbar into its own slot, so a helmet never costs you the slot
+you were keeping cobblestone in, and swapping one piece for another hands the
+old one back. If there is genuinely nowhere to put the old piece, the swap is
+refused rather than quietly destroying it. What you are wearing shows in the HUD
+as a row of armour pips above your hearts, with the four pieces themselves
+mirrored opposite the hunger bar so you can see which slot is still bare.
+
+Dying costs you everything you were carrying **and** wearing. There is no item
+entity to drop it into, so it is gone rather than waiting where you fell — you
+respawn whole, at your spawn point, with nothing.
 
 Tools matter, exactly as they do in Minecraft:
 
@@ -136,6 +158,7 @@ Tools matter, exactly as they do in Minecraft:
 | Sprint | Left stick click | `Shift` |
 | Crafting | Left grip | `E` |
 | Use a door or bed | Left trigger | Right click |
+| Wear a piece of armour | Left trigger | Right click |
 | Shoot a bow | Left trigger | Right click |
 | Climb a ladder | `A` / left stick click | `Space` / `Ctrl` |
 | Pick a block | Point at your wrist panel, pull the trigger | `1`–`9` |
@@ -165,8 +188,11 @@ is pushed back rather than letting your head pass through the blocks.
   hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside
   terrain, say — and the player is lifted clear rather than stuck.
-- **Crafting** — 30 recipes across wood, stone and iron, gated by whether a
+- **Crafting** — 38 recipes across wood, stone and iron, gated by whether a
   crafting table or furnace is within four blocks of you.
+- **Armour** — leather and iron sets in four pieces each, worn into dedicated
+  slots and soaking damage at Minecraft's four percent per point. Death takes
+  your whole inventory and everything you had on.
 - **Mobs** — eight kinds: four passive animals, plus zombies, arrow-firing
   skeletons, creepers that detonate and destroy terrain, and fast night spiders.
 - **Hands** — whatever you have selected is held in your right fist and modelled

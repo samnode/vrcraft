@@ -2,15 +2,17 @@
 // a DOM overlay on desktop, and a textured quad floating in front of you in VR
 // that the right controller points at.
 
-import * as THREE from '../vendor/three/three.module.js?v=14';
-import { block } from './blocks.js?v=14';
-import { tileRect } from './textures.js?v=14';
-import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=14';
+import * as THREE from '../vendor/three/three.module.js?v=16';
+import { block } from './blocks.js?v=16';
+import { tileRect } from './textures.js?v=16';
+import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=16';
 
-const W = 920, H = 700;
+const W = 1160, H = 700;
 const ROW_H = 52, ROW_GAP = 4;
 const LIST_TOP = 92, PAD = 20;
-const COLS = 3;
+// Four columns rather than three: thirty-eight recipes in three columns run off
+// the bottom of the panel, and a taller panel would not fit a short window.
+const COLS = 4;
 
 export class CraftUI {
   constructor(atlasCanvas) {
@@ -45,7 +47,7 @@ export class CraftUI {
     // Bounded by viewport height as well as width, so the recipe list is never
     // clipped on a short window.
     el.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
-      + `width:min(920px, 94vw, calc(88vh * ${(W / H).toFixed(3)}));`
+      + `width:min(1160px, 94vw, calc(88vh * ${(W / H).toFixed(3)}));`
       + 'image-rendering:pixelated;z-index:12;display:none;cursor:pointer';
     parent.appendChild(el);
   }

@@ -4,7 +4,7 @@
 // block in the game is one click away. Survival gives nine slots that fill from
 // what you mine, with real stack counts.
 
-import { CREATIVE_PALETTE, SURVIVAL_SLOTS, block } from './blocks.js?v=14';
+import { CREATIVE_PALETTE, SURVIVAL_SLOTS, ARMOR_SLOTS, block } from './blocks.js?v=16';
 
 const STACK_MAX = 64;
 
@@ -14,6 +14,9 @@ export class Inventory {
     this.selected = 0;
     this.onChange = null;
     this.survivalSlots = Array.from({ length: SURVIVAL_SLOTS }, () => ({ id: 0, count: 0 }));
+    // Worn gear lives outside the hotbar, so putting a helmet on does not cost
+    // you a slot you were using for cobblestone.
+    this.armor = { head: 0, chest: 0, legs: 0, feet: 0 };
     this.buildSlots();
   }
 
@@ -103,6 +106,54 @@ export class Inventory {
       }
     }
     return false;                                  // full
+  }
+
+  /**
+   * Wear a piece, putting whatever it replaces back in the hotbar. Returns false
+   * if there is nowhere to put the old piece, rather than quietly eating it.
+   */
+  equip(id) {
+    const def = block(id);
+    if (!def || !def.armor) return false;
+    const slot = def.armor.slot;
+    const current = this.armor[slot];
+    if (current === id) return false;
+    if (!this.creative) {
+      if (!this.remove(id, 1)) return false;
+      if (current && !this.add(current, 1)) {
+        this.add(id, 1);                             // undo; the hotbar is full
+        return false;
+      }
+    }
+    this.armor[slot] = id;
+    this.changed();
+    return true;
+  }
+
+  /** Total protection worn, in Minecraft's armour points. */
+  armorPoints() {
+    let n = 0;
+    for (const slot of ARMOR_SLOTS) {
+      const id = this.armor[slot];
+      if (id) n += block(id).armor.points;
+    }
+    return n;
+  }
+
+  /** Everything you were carrying and wearing, gone. Returns how much was lost. */
+  clearAll() {
+    let lost = 0;
+    for (const s of this.survivalSlots) {
+      lost += s.count;
+      s.id = 0;
+      s.count = 0;
+    }
+    for (const slot of ARMOR_SLOTS) {
+      if (this.armor[slot]) lost += 1;
+      this.armor[slot] = 0;
+    }
+    this.changed();
+    return lost;
   }
 
   setCreative(on) {

@@ -1,8 +1,8 @@
 // Day/night cycle, health and hunger. The cycle drives one shader uniform plus the
 // sky and fog colour, so terrain lighting costs nothing extra at runtime.
 
-import * as THREE from '../vendor/three/three.module.js?v=14';
-import { block } from './blocks.js?v=14';
+import * as THREE from '../vendor/three/three.module.js?v=16';
+import { block } from './blocks.js?v=16';
 
 const DAY_SECONDS = 600;                 // one full in-game day
 const MAX_HEALTH = 20, MAX_HUNGER = 20;
@@ -12,7 +12,7 @@ const SKY_DUSK  = new THREE.Color(0xe09055);
 const SKY_DAY   = new THREE.Color(0x9fc4e8);
 
 export class Survival {
-  constructor({ onDeath = null } = {}) {
+  constructor({ onDeath = null, armorPoints = () => 0 } = {}) {
     this.time = 0.28;                    // start mid-morning
     this.health = MAX_HEALTH;
     this.hunger = MAX_HUNGER;
@@ -20,6 +20,7 @@ export class Survival {
     this.dead = false;
     this.enabled = false;                // off in creative
     this.onDeath = onDeath;
+    this.armorPoints = armorPoints;
     this.hurtFlash = 0;
     this.messages = [];
     this.skyColor = SKY_DAY.clone();
@@ -53,14 +54,23 @@ export class Survival {
       this.hunger = Math.max(0, this.hunger - 1);
     }
 
-    if (this.hunger === 0) this.damage(dt * 0.6, 'starvation');
+    if (this.hunger === 0) this.damage(dt * 0.6, 'starvation', { armored: false });
     else if (this.hunger > 16 && this.health < MAX_HEALTH) this.health = Math.min(MAX_HEALTH, this.health + dt * 0.5);
 
-    if (player.position.y < -4) this.damage(MAX_HEALTH, 'the void');
+    if (player.position.y < -4) this.damage(MAX_HEALTH, 'the void', { armored: false });
   }
 
-  damage(amount, cause = '') {
+  /**
+   * Hurt the player. Armour turns aside 4% per point, Minecraft's own figure, so
+   * a full iron set stops 60% of a hit. Starving and falling out of the world
+   * ignore it: no helmet has ever helped with either.
+   */
+  damage(amount, cause = '', { armored = true } = {}) {
     if (!this.enabled || this.dead || amount <= 0) return;
+    if (armored) {
+      const soaked = Math.min(0.8, this.armorPoints() * 0.04);
+      amount *= 1 - soaked;
+    }
     this.health = Math.max(0, this.health - amount);
     this.hurtFlash = 1;
     if (this.health === 0) {
