@@ -1,15 +1,15 @@
 // Pigs and zombies. Each mob type is baked into a single merged, vertex-coloured
 // geometry so one mob costs one draw call — important with a Quest frame budget.
 
-import * as THREE from '../vendor/three/three.module.js?v=17';
+import * as THREE from '../vendor/three/three.module.js?v=20';
 import {
   isSolid, PORKCHOP, BEEF, RAW_CHICKEN, LEATHER, FEATHER, BONE, STRING,
   ARROW, GUNPOWDER, AIR, block,
-} from './blocks.js?v=17';
-import { SEA_LEVEL, SY } from './world.js?v=17';
-import { rand2 } from './noise.js?v=17';
-import { sfx } from './sfx.js?v=17';
-import { mergeBoxes } from './textures.js?v=17';
+} from './blocks.js?v=20';
+import { SEA_LEVEL, SY } from './world.js?v=20';
+import { rand2 } from './noise.js?v=20';
+import { sfx } from './sfx.js?v=20';
+import { mergeBoxes } from './textures.js?v=20';
 
 const PIG = () => mergeBoxes([
   { size: [0.62, 0.56, 0.95], pos: [0, 0.58, 0],      color: 0xeea6a0 },  // body

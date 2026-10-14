@@ -115,6 +115,23 @@ slab, and the pillow always sits at the head end whichever of the four ways the
 bed runs. Placing needs both cells clear, and using or breaking either half acts
 on the whole bed.
 
+## Biomes
+
+Five of them, picked from two slow climate fields: temperature decides hot from
+cold, humidity decides forest from open ground. Plains are flat and sparsely
+treed, forests are thick with oak, deserts are dunes of sand over sandstone with
+cacti standing in them, and the snowy taiga is deep snow and stepped conifers.
+
+Mountains are the exception: they are chosen by terrain rather than climate, and
+change with altitude the way a real one does — grass at the foot, bare stone
+higher up, snow on the caps.
+
+Height blends smoothly through a separate mountain factor rather than stepping
+with the biome, because a hard change in amplitude at a biome edge would carve a
+cliff along the whole seam. Peaks approach the world roof asymptotically instead
+of being clamped against it, which is the difference between a rounded summit and
+a sliced-off plateau.
+
 ## Armour and dying
 
 Two sets: leather off the cows, iron out of the furnace. A cap costs five, a
@@ -132,9 +149,17 @@ refused rather than quietly destroying it. What you are wearing shows in the HUD
 as a row of armour pips above your hearts, with the four pieces themselves
 mirrored opposite the hunger bar so you can see which slot is still bare.
 
-Dying costs you everything you were carrying **and** wearing. There is no item
-entity to drop it into, so it is gone rather than waiting where you fell — you
-respawn whole, at your spawn point, with nothing.
+Dying drops everything you were carrying **and** wearing on the ground where you
+fell, and tells you the coordinates. You respawn empty at your spawn point and
+have to walk back for it. Death drops never time out — a mob's loot gives you
+five minutes, but your own grave waits as long as it takes.
+
+Items on the ground are real entities, not chunk contents, which matters the
+moment you respawn: the chunk you died in streams out behind you, and anything
+owned by it would fall through a floor that no longer exists. Instead an item
+whose ground is unloaded simply freezes until you come back and it loads again.
+Mob loot lands the same way rather than teleporting into your pockets, and a
+block mined with no room left falls at your feet instead of evaporating.
 
 Tools matter, exactly as they do in Minecraft:
 
@@ -183,7 +208,12 @@ is pushed back rather than letting your head pass through the blocks.
 
 - **Terrain** — infinite streamed chunks from layered value noise: hills, beaches,
   oceans, carved cave systems, coal and iron ores, and scattered trees.
-- **Building** — 22 placeable blocks, every one reachable from the creative
+- **Biomes** — plains, forest, desert, snowy taiga and mountains, chosen from two
+  slow climate fields the way a Whittaker diagram reads temperature against
+  humidity. Deserts lay sand over sandstone and grow cacti, the taiga is snow and
+  stepped conifers, and mountains change with altitude rather than climate: grass
+  at the foot, bare rock higher, snow on the caps.
+- **Building** — 27 placeable blocks, every one reachable from the creative
   palette, including torches, crafting tables and furnaces. Breaking respects
   hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside
@@ -219,6 +249,10 @@ is pushed back rather than letting your head pass through the blocks.
 - **Survival** — health, hunger, fall damage, swimming, ladder climbing, sleeping
   through the night, and a 10-minute day cycle. Food comes from leaves, animals
   and the furnace.
+- **Dropped items** — loot, overflow and your whole inventory on death lie on the
+  ground as entities that fall, settle, spin and are picked up by walking over
+  them. They survive their chunk unloading, so a grave is still there when you
+  get back to it.
 - **Creative** — unlimited blocks, no damage, flight. The mode the game starts in.
 
 ## Layout
@@ -240,6 +274,7 @@ src/
   blocks.js         Block and item registry, tool rules
   crafting.js       Recipes, station requirements, craft and smelt
   craftui.js        Crafting panel, shared by the desktop overlay and VR
+  items.js          Items lying on the ground: death drops, loot, overflow
   held.js           First-person hands and the model of whatever you are holding
   sky.js            Sky dome, sun, moon, clouds, stars
   textures.js       Procedurally painted texture atlas (no image files)

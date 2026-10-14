@@ -23,6 +23,7 @@ export const TILES = [
   'leather', 'feather', 'bone', 'string', 'arrow', 'bow', 'gunpowder',
   'leather_helmet', 'leather_chest', 'leather_legs', 'leather_boots',
   'iron_helmet', 'iron_chest', 'iron_legs', 'iron_boots',
+  'snow', 'snow_side', 'sandstone', 'cactus_top', 'cactus_side', 'spruce_leaves',
 ];
 
 const tile = {};
@@ -170,6 +171,13 @@ export const IRON_CHEST     = armorDef(67, 'Iron Chestplate', 'iron_chest',     
 export const IRON_LEGS      = armorDef(68, 'Iron Leggings',   'iron_legs',      'legs',  5);
 export const IRON_BOOTS     = armorDef(69, 'Iron Boots',      'iron_boots',     'feet',  2);
 
+// ---------------------------------------------------------------- biome blocks
+export const SNOW          = add(def(70, 'Snow',        { all: tile.snow, hardness: 0.3, material: MAT.DIRT, varyTexture: true }));
+export const SNOWY_GRASS   = add(def(71, 'Snowy Grass', { top: tile.snow, side: tile.snow_side, bottom: tile.dirt, hardness: 0.6, drop: 2, material: MAT.DIRT, varyTexture: true }));
+export const SANDSTONE     = add(def(72, 'Sandstone',   { all: tile.sandstone, hardness: 0.8, material: MAT.STONE, requiresTier: 1 }));
+export const CACTUS        = add(def(73, 'Cactus',      { top: tile.cactus_top, side: tile.cactus_side, hardness: 0.4, material: MAT.PLANT }));
+export const SPRUCE_LEAVES = add(def(74, 'Spruce Leaves', { all: tile.spruce_leaves, hardness: 0.2, opaque: false, material: MAT.PLANT }));
+
 // Never placed from the hand or listed anywhere: it only ever appears next to a
 // BED that was just placed, and breaks with it.
 export const BED_HEAD = add(def(61, 'Bed', { all: tile.bed_item, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'bed', use: 'bed', drop: 46, parts: BED_PARTS }));
@@ -216,6 +224,7 @@ export const CREATIVE_PALETTE = [
   GRASS, DIRT, STONE, SAND, COBBLE, PLANKS, LOG, LEAVES, WOOL, BRICK,
   GLASS, GLOWSTONE, TORCH, TABLE, FURNACE, DOOR_CLOSED, LADDER, BED,
   STONE_SLAB, WOOD_SLAB, COAL_ORE, IRON_ORE,
+  SNOW, SNOWY_GRASS, SANDSTONE, CACTUS, SPRUCE_LEAVES,
 ];
 export const SURVIVAL_SLOTS = 18;
 

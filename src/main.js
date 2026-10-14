@@ -1,25 +1,26 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=17';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=17';
+import * as THREE from '../vendor/three/three.module.js?v=20';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=20';
 
-import { buildAtlas } from './textures.js?v=17';
-import { HeldItem, offHandMesh } from './held.js?v=17';
-import { Terrain } from './terrain.js?v=17';
-import { Player } from './player.js?v=17';
-import { Inventory } from './inventory.js?v=17';
-import { Survival } from './survival.js?v=17';
-import { Mobs } from './mobs.js?v=17';
-import { Interactor } from './interact.js?v=17';
-import { Particles } from './fx.js?v=17';
-import { Hud, formatClock } from './ui.js?v=17';
-import { CraftUI } from './craftui.js?v=17';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=17';
-import { Sky } from './sky.js?v=17';
-import { block } from './blocks.js?v=17';
-import { sfx } from './sfx.js?v=17';
-import { SEA_LEVEL } from './world.js?v=17';
+import { buildAtlas } from './textures.js?v=20';
+import { HeldItem, offHandMesh } from './held.js?v=20';
+import { DroppedItems } from './items.js?v=20';
+import { Terrain } from './terrain.js?v=20';
+import { Player } from './player.js?v=20';
+import { Inventory } from './inventory.js?v=20';
+import { Survival } from './survival.js?v=20';
+import { Mobs } from './mobs.js?v=20';
+import { Interactor } from './interact.js?v=20';
+import { Particles } from './fx.js?v=20';
+import { Hud, formatClock } from './ui.js?v=20';
+import { CraftUI } from './craftui.js?v=20';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=20';
+import { Sky } from './sky.js?v=20';
+import { block } from './blocks.js?v=20';
+import { sfx } from './sfx.js?v=20';
+import { SEA_LEVEL, BIOME_NAMES } from './world.js?v=20';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -27,7 +28,7 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 17';
+const BUILD = 'build 20';
 const VIEW_CHUNKS = 4;
 
 const panel = document.getElementById('panel');
@@ -90,9 +91,18 @@ player.onFallDamage = (amount) => {
   sfx.hurt();
 };
 
+// Loot and anything you were carrying when you died lie on the ground as real
+// entities rather than teleporting into your pockets.
+const items = new DroppedItems(scene, terrain.world, atlas);
+
 mobs.onDrop = (id, count, position) => {
   particles.burst(position, 0xd98d88, 8, 2.0);
-  interactor.collect(id, count);
+  items.drop(id, count, position);
+};
+
+// A block mined with a full inventory lands at your feet instead of evaporating.
+interactor.onDropExcess = (id, count) => {
+  items.drop(id, count, player.position.clone().add(new THREE.Vector3(0, 0.6, 0)), { scatter: 0.6 });
 };
 
 mobs.onExplode = (position, radius) => {
@@ -121,12 +131,19 @@ function findSpawn() {
 }
 
 function respawn() {
-  // Dying costs you what you were carrying and wearing. There is no item entity
-  // to drop it into, so it is gone rather than waiting where you fell.
-  const lost = inventory.clearAll();
+  // Everything you had falls where you died and waits there. Death drops never
+  // time out, because the whole point is that you can walk back for them.
+  const grave = player.position.clone().add(new THREE.Vector3(0, 0.8, 0));
+  const stacks = inventory.takeAll();
+  items.dropStacks(stacks, grave);
   survival.revive();
   player.spawn(spawn.x, spawn.z);
-  survival.note(lost ? `Respawned. You lost ${lost} items.` : 'Respawned at your spawn point.');
+  if (stacks.length) {
+    const at = `${Math.round(grave.x)}, ${Math.round(grave.y)}, ${Math.round(grave.z)}`;
+    survival.note(`You dropped ${stacks.length} stacks at ${at}.`);
+  } else {
+    survival.note('Respawned at your spawn point.');
+  }
 }
 
 // ---------------------------------------------------------------- controllers
@@ -608,6 +625,7 @@ function frame(dt) {
   terrain.update(player.position);
   mobs.update(dt, player);
   interactor.update(dt, active ? aimRay() : null, input);
+  items.update(dt, player, inventory);
   particles.update(dt);
   refreshHands();
   updateHands(dt, inVr);
@@ -736,7 +754,7 @@ renderer.setAnimationLoop(render);
 // Debug handle: handy from the browser console, and used by the test harness.
 window.VRCRAFT = {
   renderer, scene, camera, rig, terrain, player, inventory, survival, mobs,
-  interactor, particles, hud, craftUI, sky, controllers, grips, BUILD,
+  interactor, particles, items, hud, craftUI, sky, controllers, grips, BUILD,
   vrHand, viewHand, viewCamera,
   setCraftingOpen, tryCraft, get stations() { return stations; },
   // Lets the VR input mapping be exercised without a headset: hand it a fake
@@ -758,6 +776,9 @@ window.VRCRAFT = {
       drawCalls: worldCalls,
       triangles: worldTriangles,
       mobs: mobs.list.length,
+      items: items.list.length,
+      biome: BIOME_NAMES[terrain.world.biomeAt(
+        Math.floor(player.position.x), Math.floor(player.position.z))],
       onGround: player.onGround,
       build: BUILD,
       fps,

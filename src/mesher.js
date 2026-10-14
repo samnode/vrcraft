@@ -5,13 +5,13 @@
 // Three buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
 // water (shimmers, drawn translucent) and other translucent blocks like glass.
 
-import * as THREE from '../vendor/three/three.module.js?v=17';
-import { SX, SY, SZ, idx } from './world.js?v=17';
+import * as THREE from '../vendor/three/three.module.js?v=20';
+import { SX, SY, SZ, idx } from './world.js?v=20';
 import {
   AIR, STONE, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
   LIQUID_LUT, VARY_LUT, BED_LUT, DOOR_OPEN, isDoor, bedPartnerId,
-} from './blocks.js?v=17';
-import { tileUV } from './textures.js?v=17';
+} from './blocks.js?v=20';
+import { tileUV } from './textures.js?v=20';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
 const FACES = [

@@ -1,12 +1,12 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=17';
-import { TILES } from './blocks.js?v=17';
+import * as THREE from '../vendor/three/three.module.js?v=20';
+import { TILES } from './blocks.js?v=20';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
-export const ATLAS_ROWS = 9;
+export const ATLAS_ROWS = 10;
 
 // Deterministic per-pixel jitter so tiles look grainy rather than flat.
 function px(x, y, salt) {
@@ -420,6 +420,65 @@ const painters = {
     ctx.fillRect(ox + 2, oy + 10, TILE_PX - 4, 2);
     ctx.fillStyle = '#e9e6dc';                      // pillow at the head end
     ctx.fillRect(ox + 3, oy + 6, 11, 5);
+  },
+  snow(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [240, 243, 250], 0.07, 91);
+    // A few brighter flecks so a snowfield is not a flat white rectangle.
+    blobs(ctx, ox, oy, 'rgba(255,255,255,0.8)', 14, 2, 92);
+  },
+  snow_side(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [134, 104, 70], 0.2, 93);
+    // Snow lip over dirt, with a ragged lower edge, the same trick as grass.
+    for (let x = 0; x < TILE_PX; x++) {
+      const depth = 7 + Math.floor(px(x, 0, 94) * 5);
+      for (let y = 0; y < depth; y++) {
+        const n = (px(x, y, 95) - 0.5) * 0.08;
+        ctx.fillStyle = rgb(240 + 240 * n, 243 + 243 * n, 250 + 250 * n);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+  },
+  sandstone(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [216, 199, 148], 0.1, 96);
+    // Bedding planes: sandstone reads as stacked layers rather than specks.
+    ctx.fillStyle = 'rgba(176,158,110,0.5)';
+    ctx.fillRect(ox, oy + 2, TILE_PX, 1);
+    ctx.fillRect(ox, oy + 13, TILE_PX, 2);
+    ctx.fillRect(ox, oy + 24, TILE_PX, 1);
+    ctx.fillStyle = 'rgba(244,232,198,0.45)';
+    ctx.fillRect(ox, oy + 15, TILE_PX, 1);
+  },
+  cactus_top(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [78, 128, 66], 0.14, 97);
+    ctx.fillStyle = 'rgba(46,88,40,0.65)';
+    ctx.strokeStyle = 'rgba(46,88,40,0.65)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox + 4, oy + 4, TILE_PX - 8, TILE_PX - 8);
+    ctx.fillStyle = 'rgba(120,170,100,0.5)';
+    ctx.fillRect(ox + 13, oy + 13, 6, 6);
+  },
+  cactus_side(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [72, 120, 60], 0.14, 98);
+    // Ribs down the flesh, with spines picked out along them.
+    ctx.fillStyle = 'rgba(44,84,38,0.55)';
+    for (const x of [3, 15, 27]) ctx.fillRect(ox + x, oy, 2, TILE_PX);
+    ctx.fillStyle = 'rgba(226,228,200,0.85)';
+    for (let y = 3; y < TILE_PX; y += 7) {
+      ctx.fillRect(ox + 8, oy + y, 2, 1);
+      ctx.fillRect(ox + 21, oy + y + 3, 2, 1);
+    }
+  },
+  spruce_leaves(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    // Same cut-out needle pattern as oak, in a colder, darker green.
+    for (let y = 0; y < TILE_PX; y++) {
+      for (let x = 0; x < TILE_PX; x++) {
+        if (px(x, y, 99) < 0.14) continue;                // gaps you can see through
+        const n = (px(x, y, 100) - 0.5) * 0.26;
+        ctx.fillStyle = rgb(50 + 50 * n, 100 + 100 * n, 66 + 66 * n);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
   },
   leather_helmet: armorIcon('helmet', LEATHER_TONES, 81),
   leather_chest:  armorIcon('chest',  LEATHER_TONES, 82),

@@ -4,7 +4,7 @@
 // block in the game is one click away. Survival gives nine slots that fill from
 // what you mine, with real stack counts.
 
-import { CREATIVE_PALETTE, SURVIVAL_SLOTS, ARMOR_SLOTS, block } from './blocks.js?v=17';
+import { CREATIVE_PALETTE, SURVIVAL_SLOTS, ARMOR_SLOTS, block } from './blocks.js?v=20';
 
 const STACK_MAX = 64;
 
@@ -87,25 +87,33 @@ export class Inventory {
     return block(s.id).tool ? s.id : 0;
   }
 
-  /** Add a mined block, stacking into an existing slot where possible. */
+  /**
+   * Add items, topping up part-filled stacks before taking an empty slot.
+   * Returns how many actually fit, which may be fewer than asked for — picking a
+   * stack up off the ground has to leave the remainder lying there rather than
+   * quietly destroying it.
+   */
   add(id, count = 1) {
-    if (!id || this.creative) return true;
+    if (!id || count <= 0) return 0;
+    if (this.creative) return count;
+    let left = count;
     for (const s of this.survivalSlots) {
-      if (s.id === id && s.count < STACK_MAX) {
-        s.count = Math.min(STACK_MAX, s.count + count);
-        this.changed();
-        return true;
-      }
+      if (left === 0) break;
+      if (s.id !== id || s.count >= STACK_MAX) continue;
+      const take = Math.min(STACK_MAX - s.count, left);
+      s.count += take;
+      left -= take;
     }
     for (const s of this.survivalSlots) {
-      if (!s.id || s.count === 0) {
-        s.id = id;
-        s.count = count;
-        this.changed();
-        return true;
-      }
+      if (left === 0) break;
+      if (s.id && s.count > 0) continue;
+      s.id = id;
+      s.count = Math.min(STACK_MAX, left);
+      left -= s.count;
     }
-    return false;                                  // full
+    const added = count - left;
+    if (added) this.changed();
+    return added;
   }
 
   /**
@@ -140,20 +148,28 @@ export class Inventory {
     return n;
   }
 
-  /** Everything you were carrying and wearing, gone. Returns how much was lost. */
-  clearAll() {
-    let lost = 0;
+  /**
+   * Empty the hotbar and the armour slots, handing back what was in them as a
+   * list of stacks so the caller can put them on the ground.
+   */
+  takeAll() {
+    const stacks = [];
     for (const s of this.survivalSlots) {
-      lost += s.count;
+      if (s.id && s.count > 0) stacks.push({ id: s.id, count: s.count });
       s.id = 0;
       s.count = 0;
     }
     for (const slot of ARMOR_SLOTS) {
-      if (this.armor[slot]) lost += 1;
+      if (this.armor[slot]) stacks.push({ id: this.armor[slot], count: 1 });
       this.armor[slot] = 0;
     }
     this.changed();
-    return lost;
+    return stacks;
+  }
+
+  /** Everything gone, with nothing handed back. */
+  clearAll() {
+    return this.takeAll().reduce((n, s) => n + s.count, 0);
   }
 
   setCreative(on) {

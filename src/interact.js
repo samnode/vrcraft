@@ -1,15 +1,15 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=17';
-import { raycastVoxel } from './raycast.js?v=17';
+import * as THREE from '../vendor/three/three.module.js?v=20';
+import { raycastVoxel } from './raycast.js?v=20';
 import {
-  AIR, LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW, BED_HEAD,
+  AIR, LEAVES, SPRUCE_LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW, BED_HEAD,
   block, isItem, isArmor, isLiquid, isSolid, isDoor, isBed, bedPartnerId,
   miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=17';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=17';
-import { sfx } from './sfx.js?v=17';
+} from './blocks.js?v=20';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=20';
+import { sfx } from './sfx.js?v=20';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -160,7 +160,7 @@ export class Interactor {
 
     // Leaves occasionally yield an apple, which is the main food source.
     let drop = def.drop;
-    if (hit.id === LEAVES) drop = Math.random() < 0.12 ? APPLE : null;
+    if (hit.id === LEAVES || hit.id === SPRUCE_LEAVES) drop = Math.random() < 0.12 ? APPLE : null;
 
     if (!harvestable) {
       // Mined without the required tool: the block breaks but yields nothing.
@@ -176,11 +176,15 @@ export class Interactor {
 
   collect(id, count = 1) {
     if (this.inventory.creative) return;
-    if (this.inventory.add(id, count)) {
+    const taken = this.inventory.add(id, count);
+    if (taken > 0) {
       sfx.pickup();
-      if (this.onNotify) this.onNotify(`+${count} ${block(id).name}`);
-    } else if (this.onNotify) {
-      this.onNotify('Inventory full');
+      if (this.onNotify) this.onNotify(`+${taken} ${block(id).name}`);
+    }
+    // Whatever would not fit falls at your feet rather than vanishing.
+    if (taken < count && this.onDropExcess) {
+      this.onDropExcess(id, count - taken);
+      if (this.onNotify) this.onNotify('Inventory full');
     }
   }
 

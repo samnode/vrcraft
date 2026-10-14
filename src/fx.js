@@ -1,6 +1,6 @@
 // Pooled particle burst used for block breaking and hits. One Points draw call.
 
-import * as THREE from '../vendor/three/three.module.js?v=17';
+import * as THREE from '../vendor/three/three.module.js?v=20';
 
 const MAX = 320;
 

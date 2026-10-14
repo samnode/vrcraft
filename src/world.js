@@ -3,14 +3,17 @@
 // (one opaque + one transparent mesh per column) at the cost of slightly larger
 // rebuilds when a block changes.
 
-import { fbm2, value3, rand2 } from './noise.js?v=17';
+import { fbm2, value3, rand2 } from './noise.js?v=20';
 import {
   AIR, GRASS, DIRT, STONE, SAND, LOG, LEAVES, WATER, COAL_ORE, IRON_ORE,
+  SNOW, SNOWY_GRASS, SANDSTONE, CACTUS, SPRUCE_LEAVES,
   block, isOpaque, isSolid,
-} from './blocks.js?v=17';
+} from './blocks.js?v=20';
 
 export const SX = 16, SY = 64, SZ = 16;
 export const SEA_LEVEL = 26;
+export const BIOME = { PLAINS: 0, FOREST: 1, DESERT: 2, SNOWY: 3, MOUNTAINS: 4 };
+export const BIOME_NAMES = ['Plains', 'Forest', 'Desert', 'Snowy', 'Mountains'];
 const VOLUME = SX * SY * SZ;
 
 export const idx = (x, y, z) => (y * SZ + z) * SX + x;
@@ -113,6 +116,35 @@ export class World {
 
   // ---------------------------------------------------------------- generation
 
+  // ------------------------------------------------------------------- biomes
+
+  /**
+   * How mountainous this spot is, 0..1 and smooth. Height blends through this
+   * rather than stepping with the biome, because a hard change in amplitude at a
+   * biome border would carve a cliff along the whole seam.
+   */
+  mountainFactor(x, z) {
+    const p = fbm2(x / 260, z / 260, this.seed + 3003, 3);
+    const t = Math.min(1, Math.max(0, (p - 0.50) / 0.26));
+    return t * t * (3 - 2 * t);
+  }
+
+  /**
+   * Which biome covers this column. Two slow climate fields, read the way a
+   * Whittaker diagram does: temperature decides hot from cold, humidity decides
+   * forest from open ground. Only surface blocks and planting read this, so the
+   * boundaries can be abrupt without showing as terrain seams.
+   */
+  biomeAt(x, z) {
+    if (this.mountainFactor(x, z) > 0.55) return BIOME.MOUNTAINS;
+    const temp = fbm2(x / 420, z / 420, this.seed + 1001, 3);
+    const wet = fbm2(x / 330, z / 330, this.seed + 2002, 3);
+    if (temp > 0.60 && wet < 0.46) return BIOME.DESERT;
+    if (temp < 0.38) return BIOME.SNOWY;
+    if (wet > 0.54) return BIOME.FOREST;
+    return BIOME.PLAINS;
+  }
+
   /** Surface height as a pure function of world x,z so chunks always agree. */
   terrainHeight(x, z) {
     const continent = fbm2(x / 220, z / 220, this.seed, 3);
@@ -120,7 +152,37 @@ export class World {
     const detail = fbm2(x / 14, z / 14, this.seed + 91, 2);
     // Push the continent term through a curve so plains stay flat and peaks spike.
     const base = SEA_LEVEL - 2 + continent * 10;
-    return Math.floor(base + Math.pow(hills, 1.6) * 20 + detail * 3);
+    const amp = 14 + this.mountainFactor(x, z) * 30;
+    const raw = base + Math.pow(hills, 1.6) * amp + detail * 3;
+    // Soft ceiling. A hard clamp against the world roof slices peaks into flat
+    // plateaus; this rounds them off instead and never quite reaches the top.
+    const KNEE = SY - 14;
+    if (raw <= KNEE) return Math.floor(raw);
+    return Math.floor(KNEE + (1 - Math.exp(-(raw - KNEE) / 8)) * 6);
+  }
+
+  /**
+   * The block laid on top of a column. Mountains are the odd one: they change
+   * with altitude rather than climate, so a single peak runs grass to bare rock
+   * to snow the way a real one does.
+   */
+  surfaceBlock(biome, h) {
+    switch (biome) {
+      case BIOME.DESERT: return SAND;
+      case BIOME.SNOWY: return SNOWY_GRASS;
+      case BIOME.MOUNTAINS:
+        if (h > 44) return SNOW;
+        if (h > 36) return STONE;
+        return GRASS;
+      default: return GRASS;
+    }
+  }
+
+  /** What sits in the few blocks under the surface. */
+  fillerBlock(biome, h) {
+    if (biome === BIOME.DESERT) return SANDSTONE;
+    if (biome === BIOME.MOUNTAINS && h > 36) return STONE;
+    return DIRT;
   }
 
   /** True where a cave carves out the rock at this position. */
@@ -141,11 +203,13 @@ export class World {
         const h = Math.max(1, Math.min(SY - 6, this.terrainHeight(wx, wz)));
         const beach = h <= SEA_LEVEL + 1;
 
+        const biome = this.biomeAt(wx, wz);
+
         for (let y = 0; y <= Math.max(h, SEA_LEVEL); y++) {
           let id = AIR;
           if (y <= h) {
-            if (y === h) id = beach ? SAND : GRASS;
-            else if (y > h - 4) id = beach ? SAND : DIRT;
+            if (y === h) id = beach ? SAND : this.surfaceBlock(biome, h);
+            else if (y > h - 4) id = beach ? SAND : this.fillerBlock(biome, h);
             else id = STONE;
             if (id === STONE) {
               const r = rand2(wx * 31 + y, wz * 17 - y, this.seed + 55);
@@ -164,43 +228,93 @@ export class World {
     c.generated = true;
   }
 
+  // How thickly each biome plants, as the cut-off a per-column random must beat.
+  // Deserts never pass; they get cacti from a separate roll instead.
+  static TREE_ODDS = [0.994, 0.974, 1.1, 0.990, 0.996];
+
   /**
    * Trees are keyed off global coordinates and written from a padded candidate
    * region, so a canopy straddling a chunk border still appears in both halves.
    */
   plantTrees(c) {
-    const pad = 3;
+    const pad = 4;
     for (let dz = -pad; dz < SZ + pad; dz++) {
       for (let dx = -pad; dx < SX + pad; dx++) {
         const wx = c.cx * SX + dx, wz = c.cz * SZ + dz;
-        if (rand2(wx, wz, this.seed + 7) < 0.992) continue;
+        const biome = this.biomeAt(wx, wz);
+        const roll = rand2(wx, wz, this.seed + 7);
+
+        if (biome === BIOME.DESERT) { this.plantCactus(c, wx, wz, roll); continue; }
+        if (roll < World.TREE_ODDS[biome]) continue;
 
         const h = Math.max(1, Math.min(SY - 6, this.terrainHeight(wx, wz)));
         if (h <= SEA_LEVEL + 1 || h > SY - 12) continue;      // no trees in water or sky
+        // Nothing grows on bare mountain rock or on a snow cap.
+        if (biome === BIOME.MOUNTAINS && h > 36) continue;
         if (this.isCave(wx, h, wz)) continue;
 
-        const trunk = 4 + Math.floor(rand2(wx, wz, this.seed + 8) * 3);
-        const put = (x, y, z, id, overwrite) => {
-          const lx = x - c.cx * SX, lz = z - c.cz * SZ;
-          if (lx < 0 || lx >= SX || lz < 0 || lz >= SZ || y < 0 || y >= SY) return;
-          if (!overwrite && c.get(lx, y, lz) !== AIR) return;
-          c.set(lx, y, lz, id);
-        };
-
-        for (let i = 1; i <= trunk; i++) put(wx, h + i, wz, LOG, true);
-        const top = h + trunk;
-        for (let ly = -2; ly <= 1; ly++) {
-          const r = ly >= 1 ? 1 : (ly === 0 ? 2 : 2);
-          for (let lz2 = -r; lz2 <= r; lz2++) {
-            for (let lx2 = -r; lx2 <= r; lx2++) {
-              if (Math.abs(lx2) === r && Math.abs(lz2) === r && r > 1) continue; // round the corners
-              put(wx + lx2, top + ly, wz + lz2, LEAVES, false);
-            }
-          }
-        }
-        put(wx, top + 2, wz, LEAVES, false);
+        const put = this.writer(c);
+        if (biome === BIOME.SNOWY) this.spruce(put, wx, wz, h);
+        else this.oak(put, wx, wz, h);
       }
     }
+  }
+
+  /** Clipped block writer for a chunk: anything outside it is another chunk's job. */
+  writer(c) {
+    return (x, y, z, id, overwrite) => {
+      const lx = x - c.cx * SX, lz = z - c.cz * SZ;
+      if (lx < 0 || lx >= SX || lz < 0 || lz >= SZ || y < 0 || y >= SY) return;
+      if (!overwrite && c.get(lx, y, lz) !== AIR) return;
+      c.set(lx, y, lz, id);
+    };
+  }
+
+  /** The round-canopied tree of the plains and forests. */
+  oak(put, wx, wz, h) {
+    const trunk = 4 + Math.floor(rand2(wx, wz, this.seed + 8) * 3);
+    for (let i = 1; i <= trunk; i++) put(wx, h + i, wz, LOG, true);
+    const top = h + trunk;
+    for (let ly = -2; ly <= 1; ly++) {
+      const r = ly >= 1 ? 1 : 2;
+      for (let lz2 = -r; lz2 <= r; lz2++) {
+        for (let lx2 = -r; lx2 <= r; lx2++) {
+          if (Math.abs(lx2) === r && Math.abs(lz2) === r && r > 1) continue; // round the corners
+          put(wx + lx2, top + ly, wz + lz2, LEAVES, false);
+        }
+      }
+    }
+    put(wx, top + 2, wz, LEAVES, false);
+  }
+
+  /** Taller and conical, with the canopy stepping in as it climbs. */
+  spruce(put, wx, wz, h) {
+    const trunk = 8 + Math.floor(rand2(wx, wz, this.seed + 8) * 4);
+    for (let i = 1; i <= trunk; i++) put(wx, h + i, wz, LOG, true);
+    const top = h + trunk;
+    put(wx, top + 1, wz, SPRUCE_LEAVES, false);
+    // Skirts alternating narrow and wide on the way down. The alternation is the
+    // whole trick: a canopy of constant radius reads as a dark pillar, not a fir.
+    for (let i = 0; i < 7; i++) {
+      const r = i === 0 ? 1 : (i % 2 === 1 ? 2 : 1);
+      for (let lz2 = -r; lz2 <= r; lz2++) {
+        for (let lx2 = -r; lx2 <= r; lx2++) {
+          if (Math.abs(lx2) === r && Math.abs(lz2) === r) continue;    // clip corners
+          put(wx + lx2, top - i, wz + lz2, SPRUCE_LEAVES, false);
+        }
+      }
+    }
+  }
+
+  /** A short column of cactus, the only thing standing in a desert. */
+  plantCactus(c, wx, wz, roll) {
+    if (roll < 0.9955) return;
+    const h = Math.max(1, Math.min(SY - 6, this.terrainHeight(wx, wz)));
+    if (h <= SEA_LEVEL + 1 || h > SY - 8) return;
+    if (this.isCave(wx, h, wz)) return;
+    const put = this.writer(c);
+    const tall = 2 + Math.floor(rand2(wx, wz, this.seed + 9) * 2);
+    for (let i = 1; i <= tall; i++) put(wx, h + i, wz, CACTUS, true);
   }
 
   // ------------------------------------------------------------------- lighting
