@@ -2,7 +2,7 @@
 // time-of-day value the terrain shader uses, so the world and the sky never
 // disagree about what hour it is.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
 
 const DOME_VERT = `
   varying vec3 vDir;
@@ -90,6 +90,16 @@ const NIGHT_HOR = new THREE.Color(0x121a38);
 const DAY_TOP   = new THREE.Color(0x4f8fe0);
 const DAY_HOR   = new THREE.Color(0xbcd8f2);
 const DUSK_HOR  = new THREE.Color(0xe8945a);
+// The Nether keeps the dome but nothing else in it. A flat dark red is what the
+// view distance ends in, and the gradient runs the wrong way on purpose: it is
+// brighter low down, because what is glowing down there is the floor.
+//
+// Set channel by channel rather than from a hex, because these are the values
+// the renderer writes to the framebuffer. Every other colour in here goes
+// through a hex and so comes out darker than it reads; matching that convention
+// for a colour this dark would mean writing 0x8c5549 and meaning a deep maroon.
+const NETHER_TOP = new THREE.Color().setRGB(0.10, 0.035, 0.030);
+const NETHER_HOR = new THREE.Color().setRGB(0.30, 0.095, 0.070);
 
 export class Sky {
   constructor(scene) {
@@ -134,6 +144,18 @@ export class Sky {
     this.clouds.position.y = 110;
     this.clouds.renderOrder = -1;
     this.group.add(this.clouds);
+
+    this.nether = false;
+  }
+
+  /**
+   * Switch dimensions. Everything that belongs to a sky goes away in the Nether:
+   * there is a rock roof over your head down there, and a sun gliding across it
+   * would be the single most dimension-breaking thing in the game.
+   */
+  setNether(on) {
+    this.nether = on;
+    for (const obj of [this.sun, this.moon, this.stars, this.clouds]) obj.visible = !on;
   }
 
   makeDisc(texture, size) {
@@ -174,6 +196,13 @@ export class Sky {
   update(time, daylight, playerPosition, dt) {
     this.group.position.copy(playerPosition);
 
+    if (this.nether) {
+      this.uniforms.uTop.value.copy(NETHER_TOP);
+      this.uniforms.uHorizon.value.copy(NETHER_HOR);
+      this.uniforms.uGlow.value.setRGB(0, 0, 0);
+      return this.uniforms.uHorizon.value;
+    }
+
     const angle = time * Math.PI * 2;
     const sunDir = new THREE.Vector3(Math.cos(angle) * 0.6, Math.sin(angle), 0.35).normalize();
     this.uniforms.uSunDir.value.copy(sunDir);
@@ -187,7 +216,7 @@ export class Sky {
 
     this.sun.position.copy(sunDir).multiplyScalar(240);
     this.sun.lookAt(this.group.position);
-    this.sun.visible = height > -0.25;
+    this.sun.visible = height > -0.25;         // the Nether returns above this
 
     this.moon.position.copy(sunDir).multiplyScalar(-240);
     this.moon.lookAt(this.group.position);

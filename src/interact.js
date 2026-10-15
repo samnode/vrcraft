@@ -1,15 +1,17 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
-import { raycastVoxel } from './raycast.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
+import { raycastVoxel } from './raycast.js?v=31';
 import {
   AIR, LEAVES, SPRUCE_LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW, BED_HEAD,
+  FLINT_STEEL, OBSIDIAN,
   block, isItem, isArmor, isLiquid, isSolid, isDoor, isBed, bedPartnerId,
   miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=20';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=20';
-import { sfx } from './sfx.js?v=20';
+} from './blocks.js?v=31';
+import { ignite, extinguish, portalAdjacent } from './portal.js?v=31';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=31';
+import { sfx } from './sfx.js?v=31';
 
 const REACH = 6;
 const PLACE_COOLDOWN = 0.18;
@@ -55,6 +57,13 @@ export class Interactor {
 
     this.onNotify = null;
     this.lastRay = { origin: new THREE.Vector3(), direction: new THREE.Vector3(0, 0, -1) };
+  }
+
+  /** Follow the player into another dimension. */
+  setTerrain(terrain) {
+    this.terrain = terrain;
+    this.world = terrain.world;
+    this.setTarget(null);
   }
 
   /** ray: {origin: Vector3, direction: Vector3} already normalised. */
@@ -153,6 +162,16 @@ export class Interactor {
       const other = this.bedPartner(hit.x, hit.y, hit.z, hit.id);
       if (other) this.world.set(other[0], hit.y, other[1], AIR);
     }
+    // A portal holds together only as long as its frame does. Taking out one
+    // block of obsidian collapses the whole sheet, exactly as it should: the
+    // frame is the portal's only record of itself.
+    if (hit.id === OBSIDIAN) {
+      const touching = portalAdjacent(this.world, hit.x, hit.y, hit.z);
+      if (touching) {
+        extinguish(this.world, ...touching);
+        if (this.onNotify) this.onNotify('The portal closes');
+      }
+    }
 
     const center = new THREE.Vector3(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
     this.particles.burst(center, this.particleColor(hit.id), 16, 3.0);
@@ -201,6 +220,8 @@ export class Interactor {
     if (!id) return;
 
     if (id === BOW) { this.shoot(); return; }
+
+    if (id === FLINT_STEEL) { this.strikeLight(hit); return; }
 
     if (isArmor(id)) {                                 // worn, not placed or eaten
       this.placeTimer = 0.35;
@@ -269,6 +290,30 @@ export class Interactor {
     this.inventory.consumeSelected();
     this.placeTimer = PLACE_COOLDOWN;
     sfx.place();
+  }
+
+  /**
+   * Strike a light against the block being looked at. The only thing worth
+   * lighting is a portal frame, so a failed strike says which part was missing
+   * rather than nothing at all — building one of these from a description is
+   * hard enough without the game staying silent about why it did not work.
+   */
+  strikeLight(hit) {
+    this.placeTimer = 0.4;
+    const result = ignite(this.world, hit.x, hit.y, hit.z);
+    if (result.lit) {
+      sfx.door();
+      this.particles.burst(
+        new THREE.Vector3(hit.x + 0.5, hit.y + 1.5, hit.z + 0.5), 0xa855f7, 24, 2.5);
+      if (this.onNotify) this.onNotify('The portal opens');
+      return;
+    }
+    sfx.hit();
+    if (this.onNotify) {
+      this.onNotify(result.sawAir
+        ? 'That frame is not closed: obsidian all the way round, two by three inside'
+        : 'Nothing to light here');
+    }
   }
 
   /** The gaze flattened to one of the four compass steps. */
@@ -348,6 +393,9 @@ export class Interactor {
       17: 0xa8844f, 18: 0x707074, 19: 0xffd166,
       42: 0xe8e8ee, 43: 0x96703e, 44: 0x96703e, 45: 0x9a7340, 46: 0xb03a3a,
       47: 0x6c6c70, 48: 0xa8844f,
+      70: 0xf0f4ff, 71: 0xf0f4ff, 72: 0xdcd2a0, 73: 0x4f8a3c, 74: 0x326444,
+      75: 0x74302e, 76: 0xff8a2a, 77: 0x56423a, 78: 0xb9b0a4, 79: 0x341a1e,
+      80: 0x1a1226, 84: 0xe6e2da,
     };
     return COLORS[id] ?? 0x9a9a9a;
   }

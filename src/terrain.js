@@ -1,21 +1,26 @@
 // Streams chunks in and out around the player and keeps mesh rebuilds inside a
 // per-frame time budget, so generating terrain never stalls a VR frame.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
-import { World, SX, SZ, chunkKey } from './world.js?v=20';
-import { buildChunkGeometry, createTerrainMaterials } from './mesher.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
+import { World, SX, SZ, chunkKey, DIM } from './world.js?v=31';
+import { buildChunkGeometry, createTerrainMaterials } from './mesher.js?v=31';
 
 export class Terrain {
   constructor(scene, atlas, opts = {}) {
-    this.world = new World(opts.seed ?? 20261012);
+    this.world = new World(opts.seed ?? 20261012, opts.kind ?? DIM.OVERWORLD);
+    this.kind = this.world.kind;
     this.scene = scene;
     this.radius = opts.radius ?? 4;          // chunks; 4 => 64 block view distance
     this.budgetMs = opts.budgetMs ?? 6;      // work allowed per frame
     this.group = new THREE.Group();
     scene.add(this.group);
 
-    const fogFar = this.radius * SX - 6;
-    this.materials = createTerrainMaterials(atlas, opts.fogColor ?? 0x9fc4e8, fogFar * 0.45, fogFar);
+    const fogFar = (opts.fogFar ?? this.radius * SX - 6);
+    this.materials = createTerrainMaterials(
+      atlas, opts.fogColor ?? 0x9fc4e8,
+      fogFar * (opts.fogNearFraction ?? 0.45), fogFar,
+      opts.ambient ?? [0, 0, 0],
+    );
     this.center = { cx: Infinity, cz: Infinity };
     this.pending = [];                       // chunk coords awaiting generation
   }
@@ -62,7 +67,7 @@ export class Terrain {
   }
 
   disposeMeshes(chunk) {
-    for (const key of ['mesh', 'waterMesh', 'transparentMesh']) {
+    for (const key of ['mesh', 'waterMesh', 'transparentMesh', 'portalMesh']) {
       const m = chunk[key];
       if (!m) continue;
       this.group.remove(m);
@@ -111,7 +116,7 @@ export class Terrain {
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       this.ensureLight(this.world.chunks.get(chunkKey(chunk.cx + dx, chunk.cz + dz)));
     }
-    const { opaque, water, transparent } = buildChunkGeometry(this.world, chunk);
+    const { opaque, water, transparent, portal } = buildChunkGeometry(this.world, chunk);
     chunk.dirty = false;
     this.disposeMeshes(chunk);
 
@@ -126,15 +131,43 @@ export class Terrain {
     place(opaque, this.materials.opaque, 'mesh');
     place(water, this.materials.water, 'waterMesh');
     place(transparent, this.materials.transparent, 'transparentMesh');
+    place(portal, this.materials.portal, 'portalMesh');
   }
 
-  /** Force the chunks around a point to exist and mesh immediately (used at spawn). */
+  /**
+   * Put this dimension away while the player is somewhere else. The voxels stay,
+   * because they are the player's own work and losing them would mean coming home
+   * to a different world; the meshes go, because holding two dimensions' geometry
+   * on a headset's GPU at once is the one cost not worth paying for something
+   * nobody is looking at. They rebuild through the usual per-frame budget on wake.
+   */
+  sleep() {
+    for (const chunk of this.world.chunks.values()) {
+      this.disposeMeshes(chunk);
+      chunk.dirty = true;
+    }
+    this.group.visible = false;
+    this.pending = [];
+    this.center = { cx: Infinity, cz: Infinity };
+  }
+
+  wake() {
+    this.group.visible = true;
+    this.center = { cx: Infinity, cz: Infinity };   // forces a reschedule next update
+  }
+
+  /**
+   * Force the chunks around a point to exist and mesh immediately, for spawning
+   * and for arriving in a dimension. Only dirty chunks are rebuilt, so calling
+   * this again after writing a few blocks costs those chunks and nothing else.
+   */
   prime(x, z, radius = 1) {
     const cx = Math.floor(x / SX), cz = Math.floor(z / SZ);
     for (let dz = -radius - 1; dz <= radius + 1; dz++) {
       for (let dx = -radius - 1; dx <= radius + 1; dx++) this.world.getChunk(cx + dx, cz + dz, true);
     }
     for (const chunk of this.world.chunks.values()) {
+      if (!chunk.dirty && !chunk.lightDirty) continue;
       if (this.neighboursReady(chunk)) this.rebuild(chunk);
     }
   }

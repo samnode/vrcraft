@@ -2,16 +2,28 @@
 // One chunk is a full 16x64x16 column, which keeps the draw-call count low on Quest
 // (one opaque + one transparent mesh per column) at the cost of slightly larger
 // rebuilds when a block changes.
+//
+// A World is one dimension. The overworld and the Nether are two instances with
+// different generators and different answers to "how bright is somewhere nobody
+// has loaded yet" — 15 under an open sky, 0 under a rock roof. Both stay resident
+// while you play, so the house you built is still standing when you come back.
 
-import { fbm2, value3, rand2 } from './noise.js?v=20';
+import { fbm2, value3, rand2 } from './noise.js?v=31';
 import {
   AIR, GRASS, DIRT, STONE, SAND, LOG, LEAVES, WATER, COAL_ORE, IRON_ORE,
   SNOW, SNOWY_GRASS, SANDSTONE, CACTUS, SPRUCE_LEAVES,
+  NETHERRACK, LAVA, SOUL_SAND, QUARTZ_ORE, OBSIDIAN, GLOWSTONE,
   block, isOpaque, isSolid,
-} from './blocks.js?v=20';
+} from './blocks.js?v=31';
 
 export const SX = 16, SY = 64, SZ = 16;
 export const SEA_LEVEL = 26;
+// The Nether's lava sea, and the band of rock its roof occupies.
+export const NETHER_SEA = 10;
+export const DIM = { OVERWORLD: 'overworld', NETHER: 'nether' };
+// Horizontal squeeze between the two dimensions, as in Minecraft: one step here
+// is eight over there, which is the entire reason to travel through the Nether.
+export const NETHER_SCALE = 8;
 export const BIOME = { PLAINS: 0, FOREST: 1, DESERT: 2, SNOWY: 3, MOUNTAINS: 4 };
 export const BIOME_NAMES = ['Plains', 'Forest', 'Desert', 'Snowy', 'Mountains'];
 const VOLUME = SX * SY * SZ;
@@ -32,6 +44,7 @@ export class Chunk {
     this.mesh = null;
     this.waterMesh = null;
     this.transparentMesh = null;
+    this.portalMesh = null;
     // Tallest non-air voxel per column, used to skip empty sky during meshing.
     this.heights = new Uint8Array(SX * SZ);
   }
@@ -54,9 +67,17 @@ export class Chunk {
 }
 
 export class World {
-  constructor(seed = 1337) {
+  constructor(seed = 1337, kind = DIM.OVERWORLD) {
     this.seed = seed;
+    this.kind = kind;
+    this.nether = kind === DIM.NETHER;
     this.chunks = new Map();
+    // Sky light where there is no chunk to ask, and above the world roof. The
+    // Nether answers 0, which is what makes it genuinely dark rather than
+    // merely tinted — and it means breaking through the roof lets in nothing.
+    this.skyDefault = this.nether ? 0 : 15;
+    // What lies below y=0. Only the mesher sees it, to cull the bottom face.
+    this.baseBlock = this.nether ? NETHERRACK : STONE;
   }
 
   getChunk(cx, cz, create = false) {
@@ -72,7 +93,7 @@ export class World {
 
   /** Block id at world coords; AIR outside loaded chunks, STONE below the world. */
   get(x, y, z) {
-    if (y < 0) return STONE;
+    if (y < 0) return this.baseBlock;
     if (y >= SY) return AIR;
     const cx = Math.floor(x / SX), cz = Math.floor(z / SZ);
     const c = this.chunks.get(chunkKey(cx, cz));
@@ -105,11 +126,11 @@ export class World {
   }
 
   lightAt(x, y, z) {
-    if (y >= SY) return [15, 0];
+    if (y >= SY) return [this.skyDefault, 0];
     if (y < 0) return [0, 0];
     const cx = Math.floor(x / SX), cz = Math.floor(z / SZ);
     const c = this.chunks.get(chunkKey(cx, cz));
-    if (!c) return [15, 0];
+    if (!c) return [this.skyDefault, 0];
     const i = idx(x - cx * SX, y, z - cz * SZ);
     return [c.skyLight[i], c.blockLight[i]];
   }
@@ -195,6 +216,11 @@ export class World {
   }
 
   generate(c) {
+    if (this.nether) this.generateNether(c);
+    else this.generateOverworld(c);
+  }
+
+  generateOverworld(c) {
     const ox = c.cx * SX, oz = c.cz * SZ;
 
     for (let lz = 0; lz < SZ; lz++) {
@@ -215,6 +241,12 @@ export class World {
               const r = rand2(wx * 31 + y, wz * 17 - y, this.seed + 55);
               if (y < 20 && r > 0.988) id = IRON_ORE;
               else if (y < 34 && r > 0.972) id = COAL_ORE;
+              // Obsidian seams, down where the rock is oldest. Two rolls rather
+              // than one: the point sample decides whether a cell is obsidian,
+              // the smooth field decides where seams are allowed at all, so what
+              // you find is a vein worth following rather than isolated specks.
+              if (y < 13 && rand2(wx * 7 - y, wz * 11 + y, this.seed + 66) > 0.976
+                  && fbm2(wx / 7, wz / 7, this.seed + 67, 2) > 0.58) id = OBSIDIAN;
             }
             if (y < h && this.isCave(wx, y, wz)) id = AIR;
           }
@@ -317,6 +349,99 @@ export class World {
     for (let i = 1; i <= tall; i++) put(wx, h + i, wz, CACTUS, true);
   }
 
+  // -------------------------------------------------------------- the Nether
+
+  /**
+   * The Nether is one enormous cavern rather than a landscape: a lava sea at the
+   * bottom, a rock roof you cannot see past at the top, and a floor of netherrack
+   * between them. Generating it as a floor height and a roof height per column,
+   * then eating holes in both with 3D noise, gives the overhangs and the ragged
+   * ceiling without ever needing a density field over the whole volume.
+   */
+  netherFloor(x, z) {
+    // The range deliberately straddles the lava: where the floor comes out below
+    // NETHER_SEA the column floods and you get a lake, and where it comes out
+    // above you get dry ground. A floor that never dipped under the sea would
+    // bury the lava entirely and leave the Nether a dry cave system.
+    return NETHER_SEA - 6 + Math.floor(fbm2(x / 44, z / 44, this.seed + 9001, 3) * 21);
+  }
+
+  /** The underside of the roof. Everything from here up is solid. */
+  netherRoof(x, z) {
+    return SY - 7 - Math.floor(fbm2(x / 52, z / 52, this.seed + 9002, 3) * 13);
+  }
+
+  generateNether(c) {
+    const ox = c.cx * SX, oz = c.cz * SZ;
+
+    for (let lz = 0; lz < SZ; lz++) {
+      for (let lx = 0; lx < SX; lx++) {
+        const wx = ox + lx, wz = oz + lz;
+        const floor = this.netherFloor(wx, wz);
+        const roof = this.netherRoof(wx, wz);
+        const span = Math.max(1, roof - floor);
+        // Where columns of rock bridge the cavern. Tapering the threshold with
+        // height is what makes them stalagmites: wide at the floor, pinched as
+        // they climb, and only the strongest ones reach the ceiling.
+        const column = fbm2(wx / 30, wz / 30, this.seed + 9003, 2);
+
+        for (let y = 0; y < SY; y++) {
+          let id = AIR;
+          if (y <= floor || y >= roof) id = NETHERRACK;
+          else if (column > 0.74 + ((y - floor) / span) * 0.22) id = NETHERRACK;
+
+          // Hollows bitten out of the bulk rock. They undercut the floor into
+          // overhangs and leave the ceiling pitted rather than planed flat.
+          if (id === NETHERRACK && y > 1 && y < SY - 2
+              && value3(wx / 19, y / 13, wz / 19, this.seed + 9004) > 0.72) id = AIR;
+
+          if (id === AIR && y <= NETHER_SEA) id = LAVA;
+          else if (id === NETHERRACK) id = this.netherVein(wx, y, wz, roof);
+          if (id !== AIR) c.set(lx, y, lz, id);
+        }
+
+        this.netherDressing(c, lx, lz, wx, wz);
+      }
+    }
+    c.generated = true;
+  }
+
+  /** What a given cell of netherrack turns out to actually be. */
+  netherVein(x, y, z, roof) {
+    // Glowstone grows on the ceiling, in clusters: one roll decides the cell,
+    // a smooth field decides whether this patch of ceiling has any at all.
+    if (y >= roof && y <= roof + 2) {
+      if (fbm2(x / 11, z / 11, this.seed + 9006, 2) > 0.66
+          && rand2(x * 19 + y, z * 23 - y, this.seed + 9005) > 0.52) return GLOWSTONE;
+    }
+    // Obsidian crusts the lava shore, which matters more than it looks: it is a
+    // second source of portal frame for anyone who arrives and loses theirs.
+    // The band stops at the sea's own level rather than above it — the Nether
+    // floor sits mostly a block or two higher, and a band that reached it would
+    // tile a tenth of the open ground in black.
+    if (y >= NETHER_SEA - 3 && y <= NETHER_SEA + 1
+        && rand2(x * 13 - y, z * 29 + y, this.seed + 9007) > 0.90) return OBSIDIAN;
+    const r = rand2(x * 31 + y, z * 17 - y, this.seed + 9008);
+    if (r > 0.978) return QUARTZ_ORE;
+    return NETHERRACK;
+  }
+
+  /** Soul sand drifts across the open floor, in patches you can see the edge of. */
+  netherDressing(c, lx, lz, wx, wz) {
+    if (fbm2(wx / 21, wz / 21, this.seed + 9009, 2) < 0.62) return;
+    // Dress whatever the actual top of this column turned out to be, which after
+    // the hollows is not necessarily the floor height the column started from.
+    // Starting below the cavern ceiling rather than at the world roof: the very
+    // top of the world has open sky above it as far as a chunk is concerned, so
+    // a scan from there dresses the outside of the roof, where nobody can see it.
+    for (let y = this.netherRoof(wx, wz) - 1; y > NETHER_SEA; y--) {
+      if (c.get(lx, y, lz) !== NETHERRACK) continue;
+      if (c.get(lx, y + 1, lz) !== AIR) continue;
+      c.set(lx, y, lz, SOUL_SAND);
+      return;
+    }
+  }
+
   // ------------------------------------------------------------------- lighting
 
   /**
@@ -332,7 +457,10 @@ export class World {
     const queue = [];
     for (let lz = 0; lz < SZ; lz++) {
       for (let lx = 0; lx < SX; lx++) {
-        let level = 15;
+        // In the Nether this starts at zero, so the whole descent is skipped and
+        // the sky field stays empty. Everything you can see down there is lit by
+        // glowstone, lava or a torch you carried in.
+        let level = this.skyDefault;
         for (let y = SY - 1; y >= 0; y--) {
           const id = c.voxels[idx(lx, y, lz)];
           if (isOpaque(id)) level = 0;
@@ -390,5 +518,31 @@ export class World {
       if (isSolid(this.get(xi, y, zi))) return y + 1;
     }
     return SEA_LEVEL + 1;
+  }
+
+  /**
+   * Somewhere a player can actually stand. In the overworld that is the surface;
+   * in the Nether the surface is the underside of the roof, so this looks instead
+   * for solid rock with head room above it and nothing molten underfoot. Returns
+   * -1 when the column offers nowhere, which is normal above the lava sea.
+   */
+  standY(x, z, clear = 3) {
+    if (!this.nether) return this.surfaceY(x, z);
+    const xi = Math.floor(x), zi = Math.floor(z);
+    // Down from the ceiling of the open cavern — not up from the lava, and not
+    // down from the world roof. Scanning up finds the first sealed pocket the
+    // hollow noise bit out of the bulk rock, somewhere nobody can reach; from
+    // the world roof it finds a ledge inside the ceiling, somewhere nobody can
+    // leave. From the cavern ceiling the first solid cell is the surface you
+    // would land on if you dropped, which is the floor or the top of a pillar.
+    const top = Math.min(SY - 2, this.netherRoof(xi, zi) - 1);
+    for (let y = top; y > NETHER_SEA; y--) {
+      if (!isSolid(this.get(xi, y, zi))) continue;
+      // That first solid cell is the surface, so if the head room is not there
+      // this column simply has none: anything further down is under it.
+      for (let h = 1; h <= clear; h++) if (this.get(xi, y + h, zi) !== AIR) return -1;
+      return y + 1;
+    }
+    return -1;              // open to the lava all the way down: a lake
   }
 }

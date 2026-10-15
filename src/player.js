@@ -6,8 +6,8 @@
 // and then the rig is repositioned to honour the result. Walking into a real wall
 // therefore pushes the rig back instead of letting the head clip through.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
-import { isSolid, isLiquid, CLIMB_LUT } from './blocks.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
+import { isSolid, isLiquid, isLava, CLIMB_LUT } from './blocks.js?v=31';
 
 const WIDTH = 0.6, HEIGHT = 1.8;
 const GRAVITY = 26;
@@ -15,6 +15,7 @@ const JUMP_SPEED = 8.4;
 const WALK_SPEED = 4.3;
 const SPRINT_SPEED = 6.2;
 const SWIM_SPEED = 3.0;
+const WADE_SPEED = 1.7;          // lava is thick, and that is most of its menace
 const CLIMB_SPEED = 2.6;
 const FLY_SPEED = 9.0;
 const TERMINAL = 50;
@@ -30,6 +31,7 @@ export class Player {
     this.yaw = 0;                // rig yaw, turned by snap-turn or mouse
     this.onGround = false;
     this.inWater = false;
+    this.inLava = false;
     this.onLadder = false;
     this.flying = false;
     this.lastHeadLocal = new THREE.Vector2(0, 0);
@@ -59,7 +61,11 @@ export class Player {
   }
 
   spawn(x, z) {
-    const y = this.world.surfaceY(x, z);
+    // standY is the surface in the overworld and a cavern floor in the Nether;
+    // if the column offers nowhere at all, the surface is still better than the
+    // void, which is what the caller would otherwise get.
+    const stand = this.world.standY(x, z);
+    const y = stand > 0 ? stand : this.world.surfaceY(x, z);
     this.position.set(x + 0.5, y + 0.1, z + 0.5);
     this.velocity.set(0, 0, 0);
     this.headTracked = false;
@@ -80,9 +86,11 @@ export class Player {
     const head = this.headLocalDrift();
     const { fwd, right } = this.headingBasis();
 
-    this.inWater = this.sampleWater();
+    this.inWater = this.sampleLiquid(isLiquid);
+    this.inLava = this.sampleLiquid(isLava);
     this.onLadder = !this.flying && this.sampleLadder();
     const speed = this.flying ? FLY_SPEED
+      : this.inLava ? WADE_SPEED
       : this.inWater ? SWIM_SPEED
       : (input.sprint ? SPRINT_SPEED : WALK_SPEED);
 
@@ -100,8 +108,12 @@ export class Player {
     if (this.flying) {
       this.velocity.y = input.jump ? FLY_SPEED : (input.sneak ? -FLY_SPEED : 0);
     } else if (this.inWater) {
-      this.velocity.y += (input.jump ? 14 : -5) * dt;
-      this.velocity.y = THREE.MathUtils.clamp(this.velocity.y, -3.5, 3.5);
+      // You can climb out of lava, but only just: half the lift, a third of the
+      // top speed, and the burn is counting the whole time you are doing it.
+      const lift = this.inLava ? 7 : 14;
+      const cap = this.inLava ? 1.3 : 3.5;
+      this.velocity.y += (input.jump ? lift : -5) * dt;
+      this.velocity.y = THREE.MathUtils.clamp(this.velocity.y, -cap, cap);
       this.fallStartY = null;
     } else if (this.onLadder) {
       // On a ladder you climb with jump, descend with sneak, and otherwise ease
@@ -257,10 +269,11 @@ export class Player {
     return false;
   }
 
-  sampleWater() {
+  /** Is the player standing in a liquid matching `test`? Chest or ankles counts. */
+  sampleLiquid(test) {
     const { x, y, z } = this.position;
-    return isLiquid(this.world.get(Math.floor(x), Math.floor(y + 0.9), Math.floor(z)))
-        || isLiquid(this.world.get(Math.floor(x), Math.floor(y + 0.1), Math.floor(z)));
+    return test(this.world.get(Math.floor(x), Math.floor(y + 0.9), Math.floor(z)))
+        || test(this.world.get(Math.floor(x), Math.floor(y + 0.1), Math.floor(z)));
   }
 
   trackFall() {

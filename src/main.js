@@ -1,26 +1,27 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=31';
 
-import { buildAtlas } from './textures.js?v=20';
-import { HeldItem, offHandMesh } from './held.js?v=20';
-import { DroppedItems } from './items.js?v=20';
-import { Terrain } from './terrain.js?v=20';
-import { Player } from './player.js?v=20';
-import { Inventory } from './inventory.js?v=20';
-import { Survival } from './survival.js?v=20';
-import { Mobs } from './mobs.js?v=20';
-import { Interactor } from './interact.js?v=20';
-import { Particles } from './fx.js?v=20';
-import { Hud, formatClock } from './ui.js?v=20';
-import { CraftUI } from './craftui.js?v=20';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=20';
-import { Sky } from './sky.js?v=20';
-import { block } from './blocks.js?v=20';
-import { sfx } from './sfx.js?v=20';
-import { SEA_LEVEL, BIOME_NAMES } from './world.js?v=20';
+import { buildAtlas } from './textures.js?v=31';
+import { HeldItem, offHandMesh } from './held.js?v=31';
+import { DroppedItems } from './items.js?v=31';
+import { Terrain } from './terrain.js?v=31';
+import { Player } from './player.js?v=31';
+import { Inventory } from './inventory.js?v=31';
+import { Survival } from './survival.js?v=31';
+import { Mobs } from './mobs.js?v=31';
+import { Interactor } from './interact.js?v=31';
+import { Particles } from './fx.js?v=31';
+import { Hud, formatClock } from './ui.js?v=31';
+import { CraftUI } from './craftui.js?v=31';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=31';
+import { Sky } from './sky.js?v=31';
+import { block, PORTAL } from './blocks.js?v=31';
+import { sfx } from './sfx.js?v=31';
+import { SEA_LEVEL, BIOME_NAMES, DIM } from './world.js?v=31';
+import { mapCoords, findPortal, buildPortal } from './portal.js?v=31';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -28,8 +29,19 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 20';
+const BUILD = 'build 31';
 const VIEW_CHUNKS = 4;
+// The Nether is drawn closer in. Every column down there has a floor and a roof
+// and often a pillar between them, so a chunk carries far more geometry than a
+// landscape does, and the dense fog it is seen through hides the shorter view.
+const NETHER_CHUNKS = 3;
+// How long you have to stand in a portal before it takes you, and how much
+// faster that is in creative, where nobody wants to wait to go and look.
+const PORTAL_DELAY = 1.2;
+const PORTAL_DELAY_CREATIVE = 0.35;
+// Lava burns at roughly Minecraft's rate: a few seconds to kill an unarmoured
+// player, survivable in a full set of iron if you get out immediately.
+const LAVA_DAMAGE = 7;
 
 const panel = document.getElementById('panel');
 const statusEl = document.getElementById('status');
@@ -61,8 +73,6 @@ const ambient = new THREE.HemisphereLight(0xcfe3ff, 0x4a4436, 0.75);
 scene.add(ambient);
 
 const atlas = buildAtlas();
-const terrain = new Terrain(scene, atlas.texture, { radius: VIEW_CHUNKS, fogColor: 0x9fc4e8 });
-
 const sky = new Sky(scene);
 
 // ---------------------------------------------------------------- game state
@@ -72,10 +82,55 @@ const survival = new Survival({
   onDeath: () => { sfx.hurt(); respawn(); },
   armorPoints: () => inventory.armorPoints(),
 });
-const player = new Player(terrain.world, rig, camera);
 const inventory = new Inventory({ creative: true });
 const particles = new Particles(scene);
-const mobs = new Mobs(scene, terrain.world, survival);
+
+// ---------------------------------------------------------------- dimensions
+
+/**
+ * One dimension: its terrain, its mobs, and whatever is lying on its ground.
+ * Both dimensions stay resident for the whole session. Only the active one is
+ * simulated and drawn; the other keeps its voxels, its herds and your grave
+ * exactly where they were, frozen until you come back through the portal. That
+ * is the only reason a house you build is still standing when you return.
+ */
+function makeDimension(name, opts) {
+  const dimTerrain = new Terrain(scene, atlas.texture, opts);
+  const dimMobs = new Mobs(scene, dimTerrain.world, survival);
+  const dimItems = new DroppedItems(scene, dimTerrain.world, atlas);
+  // Loot lands on the ground of the dimension it was dropped in, which is why
+  // each set of mobs is wired to its own pile rather than to a shared one.
+  dimMobs.onDrop = (id, count, position) => {
+    particles.burst(position, 0xd98d88, 8, 2.0);
+    dimItems.drop(id, count, position);
+  };
+  dimMobs.onExplode = onExplode;
+  return { name, terrain: dimTerrain, mobs: dimMobs, items: dimItems };
+}
+
+const DIMENSIONS = {
+  [DIM.OVERWORLD]: makeDimension(DIM.OVERWORLD, {
+    radius: VIEW_CHUNKS, fogColor: 0x9fc4e8,
+  }),
+  [DIM.NETHER]: makeDimension(DIM.NETHER, {
+    kind: DIM.NETHER, radius: NETHER_CHUNKS, seed: 77140211,
+    // Fog starting much closer in, and an ambient floor so the place is dim
+    // rather than black: there is no sky light at all under that roof, so
+    // without this the Nether renders as an entirely black screen. The triple is
+    // a multiplier where 1.0 is an overworld surface at noon, tilted red.
+    fogColor: 0x8c5549, fogNearFraction: 0.30, ambient: [0.62, 0.42, 0.40],
+  }),
+};
+
+const overworld = DIMENSIONS[DIM.OVERWORLD];
+// Reassigned by setDimension. Everything below reads these rather than holding a
+// dimension of its own, so there is exactly one place that knows where you are.
+let dim = overworld;
+let terrain = dim.terrain;
+let mobs = dim.mobs;
+let items = dim.items;
+
+const player = new Player(terrain.world, rig, camera);
 const interactor = new Interactor(scene, terrain, player, inventory, survival, mobs, particles);
 const hud = new Hud(atlas.canvas);
 hud.attachToDom(document.body);
@@ -91,27 +146,18 @@ player.onFallDamage = (amount) => {
   sfx.hurt();
 };
 
-// Loot and anything you were carrying when you died lie on the ground as real
-// entities rather than teleporting into your pockets.
-const items = new DroppedItems(scene, terrain.world, atlas);
-
-mobs.onDrop = (id, count, position) => {
-  particles.burst(position, 0xd98d88, 8, 2.0);
-  items.drop(id, count, position);
-};
-
 // A block mined with a full inventory lands at your feet instead of evaporating.
 interactor.onDropExcess = (id, count) => {
   items.drop(id, count, player.position.clone().add(new THREE.Vector3(0, 0.6, 0)), { scatter: 0.6 });
 };
 
-mobs.onExplode = (position, radius) => {
+function onExplode(position, radius, cause = 'a creeper') {
   particles.burst(position, 0x3a3a3a, 60, 7.5);
   particles.burst(position, 0xffa040, 30, 5.5);
   // Everything within the blast takes damage, falling off with distance.
   const d = player.position.distanceTo(position);
-  if (d < radius + 1.5) survival.damage(Math.round(14 * (1 - d / (radius + 1.5))), 'a creeper');
-};
+  if (d < radius + 1.5) survival.damage(Math.round(14 * (1 - d / (radius + 1.5))), cause);
+}
 interactor.onNotify = (text) => survival.note(text);
 
 // Spawn on dry land near the origin.
@@ -132,18 +178,123 @@ function findSpawn() {
 
 function respawn() {
   // Everything you had falls where you died and waits there. Death drops never
-  // time out, because the whole point is that you can walk back for them.
+  // time out, because the whole point is that you can walk back for them — and
+  // if you died in the Nether they stay in the Nether, which is a longer walk.
   const grave = player.position.clone().add(new THREE.Vector3(0, 0.8, 0));
+  const diedIn = dim.name;
   const stacks = inventory.takeAll();
   items.dropStacks(stacks, grave);
   survival.revive();
+  // You always wake up in the overworld, wherever you fell.
+  setDimension(overworld);
   player.spawn(spawn.x, spawn.z);
   if (stacks.length) {
     const at = `${Math.round(grave.x)}, ${Math.round(grave.y)}, ${Math.round(grave.z)}`;
-    survival.note(`You dropped ${stacks.length} stacks at ${at}.`);
+    const where = diedIn === DIM.NETHER ? ' in the Nether' : '';
+    survival.note(`You dropped ${stacks.length} stacks at ${at}${where}.`);
   } else {
     survival.note('Respawned at your spawn point.');
   }
+}
+
+// ---------------------------------------------------------------- travel
+
+// Chunk work allowed per frame. Held here rather than on a Terrain because it is
+// a property of the device, not of the dimension, and has to survive a switch.
+let chunkBudgetMs = 6;
+
+/**
+ * Move the player between dimensions. Everything that holds a world — collision,
+ * the mobs, the things lying on the ground, the block interactor — is repointed
+ * here, which is the whole reason those are module-level bindings rather than a
+ * copy inside each subsystem.
+ */
+function setDimension(next) {
+  if (next === dim) return;
+  dim.terrain.sleep();
+  dim.items.setActive(false);
+  dim.mobs.setActive(false);
+
+  dim = next;
+  terrain = dim.terrain;
+  mobs = dim.mobs;
+  items = dim.items;
+
+  terrain.budgetMs = chunkBudgetMs;
+  terrain.wake();
+  items.setActive(true);
+  mobs.setActive(true);
+  player.world = terrain.world;
+  interactor.setTerrain(terrain);
+  interactor.mobs = mobs;
+
+  const nether = terrain.world.nether;
+  sky.setNether(nether);
+  // The scene lights exist for mobs and held items, which carry no baked light.
+  // In the Nether they come up off the floor rather than down from a sun.
+  sun.color.set(nether ? 0xffb27a : 0xffffff);
+  sun.position.set(0.5, nether ? -0.8 : 1, 0.3);
+  ambient.color.set(nether ? 0x8a3524 : 0xcfe3ff);
+  ambient.groundColor.set(nether ? 0x5a221a : 0x4a4436);
+}
+
+/** Is the player standing in a portal sheet? Ankles or chest counts. */
+function inPortal() {
+  const p = player.position;
+  const w = terrain.world;
+  const x = Math.floor(p.x), z = Math.floor(p.z);
+  return w.get(x, Math.floor(p.y + 0.2), z) === PORTAL
+      || w.get(x, Math.floor(p.y + 1.2), z) === PORTAL;
+}
+
+let portalHold = 0;
+// Re-armed only once you are clear of a portal. Arriving leaves you standing
+// inside one, and without this the next frame would send you straight back.
+let portalArmed = true;
+
+function updatePortal(dt) {
+  if (!inPortal()) {
+    portalHold = 0;
+    portalArmed = true;
+    return;
+  }
+  if (!portalArmed) return;
+  portalHold += dt;
+  if (portalHold < (inventory.creative ? PORTAL_DELAY_CREATIVE : PORTAL_DELAY)) return;
+  portalHold = 0;
+  portalArmed = false;
+  travel();
+}
+
+/**
+ * Step through. The destination is the same place at a different scale — one
+ * block here is eight over there, which is the entire reason to use the Nether
+ * to get somewhere. If no portal is waiting at the far end, one is built:
+ * arriving is not allowed to fail, because a player who lands inside rock or
+ * falls out of the world has no way of understanding what went wrong.
+ */
+function travel() {
+  const toNether = dim === overworld;
+  const target = mapCoords(player.position.x, player.position.z, toNether);
+  setDimension(DIMENSIONS[toNether ? DIM.NETHER : DIM.OVERWORLD]);
+
+  // The destination chunks have to exist before anything can be read out of
+  // them or written into them, and a portal is four blocks wide.
+  terrain.prime(target.x, target.z, 1);
+  const spot = findPortal(terrain.world, target.x, target.z)
+    ?? buildPortal(terrain.world, target.x, target.z);
+  // Anything just built has dirtied a chunk or two; this picks up only those.
+  terrain.prime(spot.x, spot.z, 1);
+
+  player.position.set(spot.x, spot.y + 0.1, spot.z);
+  player.velocity.set(0, 0, 0);
+  player.headTracked = false;
+  player.syncRig();
+
+  sfx.sleep();
+  survival.note(toNether
+    ? `The Nether. ${Math.round(spot.x)}, ${Math.round(spot.z)}.`
+    : `Back in the overworld. ${Math.round(spot.x)}, ${Math.round(spot.z)}.`);
 }
 
 // ---------------------------------------------------------------- controllers
@@ -508,7 +659,8 @@ desktopButton.addEventListener('click', () => {
 renderer.xr.addEventListener('sessionstart', () => {
   // A standalone headset has roughly a third of the CPU headroom of a laptop,
   // and a blown frame during a turn reads as the rotation stuttering.
-  terrain.budgetMs = 2.5;
+  chunkBudgetMs = 2.5;
+  terrain.budgetMs = chunkBudgetMs;
   showEntry(false);
   crosshair.style.display = 'none';
   hud.panel.visible = true;
@@ -518,7 +670,8 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 
 renderer.xr.addEventListener('sessionend', () => {
-  terrain.budgetMs = 6;
+  chunkBudgetMs = 6;
+  terrain.budgetMs = chunkBudgetMs;
   setCraftingOpen(false);
   showEntry(true);
   hud.panel.visible = false;
@@ -622,6 +775,11 @@ function frame(dt) {
   survival.update(dt, player);
   survival.tickMessages(dt);
   player.update(dt, input);
+  // Standing in lava burns continuously rather than in hits, which is what makes
+  // it read as a hazard to get out of rather than a trap you have already lost to.
+  if (player.inLava) { survival.damage(dt * LAVA_DAMAGE, 'lava'); particles.burst(
+    player.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 0xffa040, 2, 1.6); }
+  updatePortal(dt);
   terrain.update(player.position);
   mobs.update(dt, player);
   interactor.update(dt, active ? aimRay() : null, input);
@@ -733,8 +891,12 @@ function updateCraftPointer(input) {
 }
 
 function updateSky(dt) {
+  const nether = terrain.world.nether;
   const light = survival.daylight;
-  terrain.uniforms.uDayLight.value = light;
+  // Under a rock roof the day/night term has nothing left to multiply, because
+  // sky light is zero everywhere down there. Pinning it to one keeps the single
+  // uniform honest for the things that are lit: glowstone, lava, and torches.
+  terrain.uniforms.uDayLight.value = nether ? 1 : light;
   terrain.uniforms.uTime.value += dt;
 
   // The sky dome owns the palette now; fog blends the terrain into its horizon
@@ -743,6 +905,13 @@ function updateSky(dt) {
   terrain.uniforms.uFogColor.value.copy(horizon);
   scene.background = null;                    // the dome covers the whole view
 
+  if (nether) {
+    // Fixed, because there is no hour of the day in the Nether. The directional
+    // light stays where setDimension put it, pointing up from the lava.
+    sun.intensity = 0.5;
+    ambient.intensity = 0.85;
+    return;
+  }
   sun.intensity = 0.35 + light * 1.35;
   ambient.intensity = 0.25 + light * 0.6;
   const angle = survival.time * Math.PI * 2;
@@ -753,10 +922,19 @@ renderer.setAnimationLoop(render);
 
 // Debug handle: handy from the browser console, and used by the test harness.
 window.VRCRAFT = {
-  renderer, scene, camera, rig, terrain, player, inventory, survival, mobs,
-  interactor, particles, items, hud, craftUI, sky, controllers, grips, BUILD,
-  vrHand, viewHand, viewCamera,
-  setCraftingOpen, tryCraft, get stations() { return stations; },
+  renderer, scene, camera, rig, player, inventory, survival,
+  interactor, particles, hud, craftUI, sky, controllers, grips, BUILD,
+  vrHand, viewHand, viewCamera, DIMENSIONS,
+  // These three move when the player changes dimension, so they are read live
+  // rather than captured: a stale terrain here would quietly measure the world
+  // nobody is standing in.
+  get terrain() { return terrain; },
+  get mobs() { return mobs; },
+  get items() { return items; },
+  get dimension() { return dim.name; },
+  setCraftingOpen, tryCraft, travel,
+  goTo(name) { setDimension(DIMENSIONS[name] ?? overworld); },
+  get stations() { return stations; },
   // Lets the VR input mapping be exercised without a headset: hand it a fake
   // gamepad through controllers[i].userData and call this directly.
   vrInput: (dt) => gatherVrInput(dt),
@@ -777,9 +955,12 @@ window.VRCRAFT = {
       triangles: worldTriangles,
       mobs: mobs.list.length,
       items: items.list.length,
-      biome: BIOME_NAMES[terrain.world.biomeAt(
+      dimension: dim.name,
+      biome: terrain.world.nether ? 'Nether' : BIOME_NAMES[terrain.world.biomeAt(
         Math.floor(player.position.x), Math.floor(player.position.z))],
       onGround: player.onGround,
+      inLava: player.inLava,
+      inPortal: inPortal(),
       build: BUILD,
       fps,
       worstFrameMs: +worstFrameMs.toFixed(1),

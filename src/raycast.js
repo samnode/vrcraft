@@ -1,8 +1,13 @@
 // Amanatides & Woo voxel DDA. Returns the first non-air voxel along the ray plus
 // the face normal, which is what block placement needs.
 
-import { AIR, isLiquid } from './blocks.js?v=20';
+import { AIR, isLiquid, isPortal } from './blocks.js?v=31';
 
+/**
+ * skipLiquid also skips portal sheets. Neither can be mined, placed against or
+ * used, so stopping the ray on one would only ever get in the way of reaching
+ * the block behind it — which for a portal is the obsidian holding it open.
+ */
 export function raycastVoxel(world, origin, direction, maxDistance = 6, skipLiquid = true) {
   let x = Math.floor(origin.x), y = Math.floor(origin.y), z = Math.floor(origin.z);
 
@@ -24,7 +29,7 @@ export function raycastVoxel(world, origin, direction, maxDistance = 6, skipLiqu
 
   while (t <= maxDistance) {
     const id = world.get(x, y, z);
-    if (id !== AIR && !(skipLiquid && isLiquid(id))) {
+    if (id !== AIR && !(skipLiquid && (isLiquid(id) || isPortal(id)))) {
       return { x, y, z, id, normal, distance: t };
     }
 

@@ -2,16 +2,18 @@
 // (across chunk borders too) and each vertex carries baked sky light, block light
 // and ambient occlusion, so the day/night cycle is a single shader uniform.
 //
-// Three buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
-// water (shimmers, drawn translucent) and other translucent blocks like glass.
+// Four buffers come out of a chunk: opaque (alpha-tested, so leaves belong here),
+// water (shimmers, drawn translucent), other translucent blocks like glass, and
+// portal sheets, which get their own pass because they are self-lit and animated
+// and so cannot share a material with ordinary glass.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
-import { SX, SY, SZ, idx } from './world.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
+import { SX, SY, SZ, idx } from './world.js?v=31';
 import {
-  AIR, STONE, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
-  LIQUID_LUT, VARY_LUT, BED_LUT, DOOR_OPEN, isDoor, bedPartnerId,
-} from './blocks.js?v=20';
-import { tileUV } from './textures.js?v=20';
+  AIR, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
+  WATER, VARY_LUT, BED_LUT, PORTAL_LUT, DOOR_OPEN, isDoor, bedPartnerId,
+} from './blocks.js?v=31';
+import { tileUV } from './textures.js?v=31';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
 const FACES = [
@@ -105,6 +107,7 @@ class Buf {
 const opaqueBuf = new Buf();
 const waterBuf = new Buf();
 const glassBuf = new Buf();
+const portalBuf = new Buf();
 
 // A chunk plus a one-voxel shell of its neighbours, copied into flat arrays once
 // per rebuild. Face culling, ambient occlusion and light sampling all read from
@@ -135,8 +138,8 @@ function fillCache(world, chunk) {
 
   const shell = (x, y, z) => {
     const dst = pidx(x, y, z);
-    if (y < 0) { vox[dst] = STONE; sky[dst] = 0; blk[dst] = 0; return; }
-    if (y >= SY) { vox[dst] = AIR; sky[dst] = 15; blk[dst] = 0; return; }
+    if (y < 0) { vox[dst] = world.baseBlock; sky[dst] = 0; blk[dst] = 0; return; }
+    if (y >= SY) { vox[dst] = AIR; sky[dst] = world.skyDefault; blk[dst] = 0; return; }
     vox[dst] = world.get(ox + x, y, oz + z);
     const [s, b] = world.lightAt(ox + x, y, oz + z);
     sky[dst] = s; blk[dst] = b;
@@ -153,7 +156,7 @@ function fillCache(world, chunk) {
 
 export function buildChunkGeometry(world, chunk) {
   fillCache(world, chunk);
-  opaqueBuf.reset(); waterBuf.reset(); glassBuf.reset();
+  opaqueBuf.reset(); waterBuf.reset(); glassBuf.reset(); portalBuf.reset();
   const ox = chunk.cx * SX, oz = chunk.cz * SZ;
 
   for (let lz = 0; lz < SZ; lz++) {
@@ -173,7 +176,11 @@ export function buildChunkGeometry(world, chunk) {
           continue;
         }
 
-        const buf = LIQUID_LUT[id] ? waterBuf : (def.blend ? glassBuf : opaqueBuf);
+        // Lava goes in the opaque pass despite not being an opaque block: it is
+        // not see-through, but it must not block sky light or cull its
+        // neighbours' faces, and those are two different questions.
+        const buf = PORTAL_LUT[id] ? portalBuf
+          : (id === WATER ? waterBuf : (def.blend ? glassBuf : opaqueBuf));
         const rot = VARY_LUT[id] ? hashPos(ox + lx, y, oz + lz) : 0;
 
         for (let f = 0; f < 6; f++) {
@@ -197,6 +204,7 @@ export function buildChunkGeometry(world, chunk) {
     opaque: opaqueBuf.verts ? opaqueBuf.toGeometry() : null,
     water: waterBuf.verts ? waterBuf.toGeometry() : null,
     transparent: glassBuf.verts ? glassBuf.toGeometry() : null,
+    portal: portalBuf.verts ? portalBuf.toGeometry() : null,
   };
 }
 
@@ -432,6 +440,8 @@ const FRAG = `
   uniform float uAlphaTest;
   uniform float uTime;
   uniform float uWater;
+  uniform float uPortal;
+  uniform vec3 uAmbient;
   varying vec2 vUv;
   varying vec3 vLight;
   varying vec3 vWorld;
@@ -441,11 +451,27 @@ const FRAG = `
     vec4 tex = texture2D(uAtlas, vUv);
     if (tex.a < uAlphaTest) discard;
 
+    float fogAmount = clamp((vDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+
+    // A portal sheet is its own light source, so it ignores the baked light
+    // entirely. Two counter-drifting waves read off world position make it churn
+    // without scrolling the UVs, which would sample the neighbouring atlas tile.
+    if (uPortal > 0.5) {
+      float a = sin(vWorld.y * 2.6 - uTime * 2.3) * 0.5 + 0.5;
+      float b = sin((vWorld.x + vWorld.z) * 2.1 + uTime * 1.7) * 0.5 + 0.5;
+      vec3 glow = mix(vec3(0.40, 0.10, 0.70), vec3(0.86, 0.52, 1.0), a * 0.55 + b * 0.45);
+      gl_FragColor = vec4(mix(tex.rgb * glow * 2.4, uFogColor, fogAmount), tex.a * 0.9);
+      return;
+    }
+
     // Sunlight cools and dims towards night; torchlight stays warm regardless.
     // Keeping the two tinted separately is what makes a lit cave read as lit.
+    // uAmbient is the floor a dimension never goes below: zero in the overworld,
+    // where a cave is supposed to be black, and a dim red in the Nether, which
+    // has no sky light at all and would otherwise be unplayable past a torch.
     vec3 skyTint = mix(vec3(0.42, 0.52, 0.80), vec3(1.0), uDayLight);
     vec3 warm = vec3(1.0, 0.76, 0.46);
-    vec3 lum = skyTint * (vLight.x * uDayLight) + warm * vLight.y;
+    vec3 lum = skyTint * (vLight.x * uDayLight) + warm * vLight.y + uAmbient;
     lum = clamp(lum, vec3(0.05), vec3(1.25));
 
     vec3 color = tex.rgb * lum * vLight.z;
@@ -457,12 +483,16 @@ const FRAG = `
       color += vec3(0.05, 0.08, 0.11) * w;
     }
 
-    float fog = clamp((vDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
-    gl_FragColor = vec4(mix(color, uFogColor, fog), tex.a);
+    gl_FragColor = vec4(mix(color, uFogColor, fogAmount), tex.a);
   }
 `;
 
-export function createTerrainMaterials(atlas, fogColor, fogNear, fogFar) {
+/**
+ * `ambient` is a straight per-channel multiplier on the texture, not a colour:
+ * 1.0 matches an overworld surface at noon. It is passed as a plain triple for
+ * exactly that reason — a hex here would be read as a tint and set far too dark.
+ */
+export function createTerrainMaterials(atlas, fogColor, fogNear, fogFar, ambient = [0, 0, 0]) {
   const shared = {
     uAtlas: { value: atlas },
     uDayLight: { value: 1 },
@@ -470,20 +500,28 @@ export function createTerrainMaterials(atlas, fogColor, fogNear, fogFar) {
     uFogNear: { value: fogNear },
     uFogFar: { value: fogFar },
     uTime: { value: 0 },
+    uAmbient: { value: new THREE.Vector3(...ambient) },
   };
 
-  const make = (alphaTest, water, opts = {}) => new THREE.ShaderMaterial({
+  const make = (alphaTest, water, portal, opts = {}) => new THREE.ShaderMaterial({
     // Spread shares the uniform objects, so one day/night write covers them all.
-    uniforms: { ...shared, uAlphaTest: { value: alphaTest }, uWater: { value: water } },
+    uniforms: {
+      ...shared,
+      uAlphaTest: { value: alphaTest },
+      uWater: { value: water },
+      uPortal: { value: portal },
+    },
     vertexShader: VERT,
     fragmentShader: FRAG,
     ...opts,
   });
 
   return {
-    opaque: make(0.5, 0),
-    water: make(0.02, 1, { transparent: true, depthWrite: false }),
-    transparent: make(0.02, 0, { transparent: true, depthWrite: false }),
+    opaque: make(0.5, 0, 0),
+    water: make(0.02, 1, 0, { transparent: true, depthWrite: false }),
+    transparent: make(0.02, 0, 0, { transparent: true, depthWrite: false }),
+    // Drawn from both sides: a portal is one cell thick and you can walk round it.
+    portal: make(0.02, 0, 1, { transparent: true, depthWrite: false, side: THREE.DoubleSide }),
     uniforms: shared,
   };
 }

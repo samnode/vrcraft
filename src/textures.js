@@ -1,12 +1,12 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
-import { TILES } from './blocks.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
+import { TILES } from './blocks.js?v=31';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
-export const ATLAS_ROWS = 10;
+export const ATLAS_ROWS = 12;
 
 // Deterministic per-pixel jitter so tiles look grainy rather than flat.
 function px(x, y, salt) {
@@ -651,6 +651,187 @@ for (const kind of ['pick', 'axe', 'shovel', 'sword']) {
     painters[`${kind}_${material}`] = paintTool(kind, material);
   }
 }
+
+// ---------------------------------------------------------------- the Nether
+//
+// The whole dimension is built from one family of reds, which is what makes it
+// read as somewhere else rather than as the overworld with a filter on it. Every
+// tile here is deliberately darker than its overworld counterpart: the Nether has
+// no sky light at all, so textures that look right under daylight turn to mud.
+
+const NETHERRACK_BASE = [116, 48, 46];
+
+Object.assign(painters, {
+  netherrack(ctx, ox, oy) {
+    grainy(ctx, ox, oy, NETHERRACK_BASE, 0.3, 70);
+    // Stringy darker veins, drawn as short vertical runs so the stone looks
+    // fibrous the way netherrack does rather than merely speckled.
+    for (let x = 0; x < TILE_PX; x++) {
+      if (px(x, 3, 71) < 0.7) continue;
+      const y0 = Math.floor(px(x, 4, 72) * TILE_PX);
+      const len = 3 + Math.floor(px(x, 5, 73) * 7);
+      ctx.fillStyle = 'rgba(66,24,24,0.55)';
+      ctx.fillRect(ox + x, oy + y0, 1, len);
+    }
+    blobs(ctx, ox, oy, 'rgba(154,70,58,0.4)', 14, 2, 74);
+  },
+
+  lava(ctx, ox, oy) {
+    // Molten rock is a bright body with a dark crust floating on it. Painting
+    // the crust as blobs over the glow, rather than tinting the whole tile,
+    // keeps the hot parts genuinely bright next to the cooled parts.
+    for (let y = 0; y < TILE_PX; y++) {
+      for (let x = 0; x < TILE_PX; x++) {
+        const n = px(x, y, 75) * 0.5 + px(Math.floor(x / 4), Math.floor(y / 4), 76) * 0.5;
+        ctx.fillStyle = rgb(226 + n * 28, 96 + n * 110, 20 + n * 30);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+    blobs(ctx, ox, oy, 'rgba(120,34,12,0.55)', 9, 4, 77);
+    blobs(ctx, ox, oy, 'rgba(255,232,140,0.8)', 7, 3, 78);
+  },
+
+  soul_sand(ctx, ox, oy) {
+    // Lighter than it looks it should be. Everything down there is multiplied by
+    // a dim red ambient, and at the shade this block would be by daylight it
+    // reads as a hole cut in the floor rather than as a patch of ground.
+    grainy(ctx, ox, oy, [124, 100, 86], 0.2, 79);
+    // The hollows are what name the block. Three rough rings, each a dark pit
+    // with a lighter rim, scattered without overlapping the tile edges.
+    for (let i = 0; i < 3; i++) {
+      const cx = 6 + Math.floor(px(i, 1, 80) * 20);
+      const cy = 6 + Math.floor(px(i, 2, 81) * 20);
+      ctx.fillStyle = 'rgba(88,68,56,0.7)';
+      ctx.beginPath();
+      ctx.arc(ox + cx, oy + cy, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(156,132,112,0.55)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(ox + cx, oy + cy, 4.8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  },
+
+  quartz_ore(ctx, ox, oy) {
+    painters.netherrack(ctx, ox, oy);
+    // Crystals in facets rather than round specks, so the ore reads as mineral
+    // rather than as a lighter patch of the rock it sits in.
+    for (let i = 0; i < 7; i++) {
+      const cx = 4 + Math.floor(px(i, 6, 82) * 24);
+      const cy = 4 + Math.floor(px(i, 7, 83) * 24);
+      const s = 3 + Math.floor(px(i, 8, 84) * 3);
+      ctx.fillStyle = 'rgba(232,226,216,0.95)';
+      ctx.fillRect(ox + cx, oy + cy, s, s);
+      ctx.fillStyle = 'rgba(160,150,142,0.7)';
+      ctx.fillRect(ox + cx, oy + cy + s - 1, s, 1);
+      ctx.fillStyle = 'rgba(255,255,252,0.9)';
+      ctx.fillRect(ox + cx, oy + cy, s - 1, 1);
+    }
+  },
+
+  quartz_block(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [230, 226, 218], 0.07, 85);
+    ctx.fillStyle = 'rgba(200,194,184,0.45)';
+    ctx.fillRect(ox, oy + TILE_PX - 2, TILE_PX, 2);
+    ctx.fillStyle = 'rgba(252,252,250,0.6)';
+    ctx.fillRect(ox, oy, TILE_PX, 2);
+  },
+
+  nether_brick(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [52, 26, 30], 0.18, 86);
+    // Courses offset by half a brick, with mortar darker than the brick rather
+    // than lighter: pale mortar is what makes a dark brick look like clay.
+    ctx.fillStyle = 'rgba(26,12,15,0.9)';
+    for (let y = 0; y < TILE_PX; y += 8) ctx.fillRect(ox, oy + y, TILE_PX, 2);
+    for (let y = 0; y < TILE_PX; y += 8) {
+      const shift = (y / 8) % 2 ? 8 : 0;
+      for (let x = shift; x < TILE_PX; x += 16) ctx.fillRect(ox + x, oy + y, 2, 8);
+    }
+    blobs(ctx, ox, oy, 'rgba(80,42,46,0.35)', 10, 2, 87);
+  },
+
+  obsidian(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [22, 16, 36], 0.35, 88);
+    blobs(ctx, ox, oy, 'rgba(78,54,122,0.5)', 12, 3, 89);
+    // A couple of specular slashes: obsidian is volcanic glass, and the thing
+    // that sells glass is a highlight that does not follow the grain.
+    ctx.strokeStyle = 'rgba(150,120,205,0.4)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const x = 4 + Math.floor(px(i, 9, 90) * 22);
+      const y = 4 + Math.floor(px(i, 10, 91) * 22);
+      ctx.beginPath();
+      ctx.moveTo(ox + x, oy + y);
+      ctx.lineTo(ox + x + 5, oy + y + 7);
+      ctx.stroke();
+    }
+  },
+
+  portal(ctx, ox, oy) {
+    // The shader does the drifting and the glow; this tile supplies the
+    // structure that drifts. Every term is periodic at the tile size, which is
+    // the whole point: a portal is two cells wide and three tall, and a pattern
+    // that did not wrap would show that grid as six identical stamps.
+    for (let y = 0; y < TILE_PX; y++) {
+      for (let x = 0; x < TILE_PX; x++) {
+        const u = (x / TILE_PX) * Math.PI * 2;
+        const v = (y / TILE_PX) * Math.PI * 2;
+        const a = Math.sin(u * 2 + Math.sin(v) * 1.6);
+        const b = Math.sin(v * 3 - Math.sin(u) * 1.3);
+        const c = Math.sin(u + v * 2);
+        const n = px(x, y, 92);
+        const k = Math.min(1, Math.max(0, (a * 0.34 + b * 0.34 + c * 0.32 + 1) / 2 * 0.82 + n * 0.18));
+        ctx.fillStyle = `rgba(${108 + k * 130 | 0},${34 + k * 74 | 0},${176 + k * 74 | 0},${(0.55 + k * 0.45).toFixed(3)})`;
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+  },
+
+  quartz(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    // A single cleaved shard, lit from the upper left.
+    const shard = [[13, 6], [21, 12], [19, 25], [11, 24], [9, 11]];
+    ctx.beginPath();
+    ctx.moveTo(ox + shard[0][0], oy + shard[0][1]);
+    for (const [x, y] of shard.slice(1)) ctx.lineTo(ox + x, oy + y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgb(226,222,214)';
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,253,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(ox + 13, oy + 6);
+    ctx.lineTo(ox + 15, oy + 24);
+    ctx.lineTo(ox + 11, oy + 24);
+    ctx.lineTo(ox + 9, oy + 11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(132,126,118,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ox + 13, oy + 6);
+    ctx.lineTo(ox + 15, oy + 24);
+    ctx.stroke();
+  },
+
+  flint_steel(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    // Steel striker across the bottom, flint above it, sparks between: the two
+    // halves have to touch or the icon reads as two unrelated objects.
+    grainy2(ctx, ox + 6, oy + 18, 20, 6, [176, 180, 190], 0.2, 93);
+    ctx.fillStyle = 'rgba(226,232,240,0.8)';
+    ctx.fillRect(ox + 6, oy + 18, 20, 1);
+    ctx.fillStyle = 'rgba(96,100,110,0.8)';
+    ctx.fillRect(ox + 6, oy + 23, 20, 1);
+    grainy2(ctx, ox + 9, oy + 8, 12, 9, [64, 62, 68], 0.3, 94);
+    ctx.fillStyle = 'rgba(120,118,126,0.7)';
+    ctx.fillRect(ox + 9, oy + 8, 12, 1);
+    ctx.fillStyle = 'rgba(255,214,110,0.95)';
+    for (const [x, y, s] of [[22, 14, 2], [25, 11, 2], [20, 10, 1], [26, 16, 1]]) {
+      ctx.fillRect(ox + x, oy + y, s, s);
+    }
+  },
+});
 
 export function buildAtlas() {
   const canvas = document.createElement('canvas');

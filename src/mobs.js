@@ -1,15 +1,16 @@
-// Pigs and zombies. Each mob type is baked into a single merged, vertex-coloured
-// geometry so one mob costs one draw call — important with a Quest frame budget.
+// Pigs and zombies, and the Nether's own two. Each mob type is baked into a
+// single merged, vertex-coloured geometry so one mob costs one draw call —
+// important with a Quest frame budget.
 
-import * as THREE from '../vendor/three/three.module.js?v=20';
+import * as THREE from '../vendor/three/three.module.js?v=31';
 import {
-  isSolid, PORKCHOP, BEEF, RAW_CHICKEN, LEATHER, FEATHER, BONE, STRING,
-  ARROW, GUNPOWDER, AIR, block,
-} from './blocks.js?v=20';
-import { SEA_LEVEL, SY } from './world.js?v=20';
-import { rand2 } from './noise.js?v=20';
-import { sfx } from './sfx.js?v=20';
-import { mergeBoxes } from './textures.js?v=20';
+  isSolid, isLava, isBlastProof, PORKCHOP, BEEF, RAW_CHICKEN, LEATHER, FEATHER,
+  BONE, STRING, ARROW, GUNPOWDER, QUARTZ, AIR,
+} from './blocks.js?v=31';
+import { SEA_LEVEL, SY } from './world.js?v=31';
+import { rand2 } from './noise.js?v=31';
+import { sfx } from './sfx.js?v=31';
+import { mergeBoxes } from './textures.js?v=31';
 
 const PIG = () => mergeBoxes([
   { size: [0.62, 0.56, 0.95], pos: [0, 0.58, 0],      color: 0xeea6a0 },  // body
@@ -95,9 +96,52 @@ const SPIDER = () => mergeBoxes([
   { size: [0.62, 0.08, 0.08], pos: [0.46, 0.18, 0.48],   color: 0x241812 },
 ]);
 
+// Zombie proportions in pig colours, with a gold blade: the silhouette has to
+// read as "the thing that kills you" from across a cavern, and the sword is what
+// says that faster than the tint does.
+const PIGMAN = () => mergeBoxes([
+  { size: [0.50, 0.70, 0.28], pos: [0, 1.12, 0],         color: 0xc9827e },
+  { size: [0.44, 0.44, 0.44], pos: [0, 1.66, 0],         color: 0xdd9690 },
+  { size: [0.24, 0.15, 0.10], pos: [0, 1.59, -0.26],     color: 0xa96a66 },  // snout
+  { size: [0.10, 0.10, 0.04], pos: [-0.12, 1.73, -0.23], color: 0x2a1418 },  // eyes
+  { size: [0.10, 0.10, 0.04], pos: [0.12, 1.73, -0.23],  color: 0x2a1418 },
+  { size: [0.16, 0.58, 0.44], pos: [-0.33, 1.22, -0.16], color: 0xbb7773 },  // arms out
+  { size: [0.16, 0.58, 0.44], pos: [0.33, 1.22, -0.16],  color: 0xbb7773 },
+  { size: [0.18, 0.78, 0.18], pos: [-0.13, 0.39, 0],     color: 0x6d5a48 },  // legs
+  { size: [0.18, 0.78, 0.18], pos: [0.13, 0.39, 0],      color: 0x6d5a48 },
+  { size: [0.07, 0.07, 0.54], pos: [0.33, 1.04, -0.54],  color: 0xe6c258 },  // gold blade
+]);
+
+/** Nine tentacles of uneven length, hung under the body on a 3x3 grid. */
+function ghastTentacles() {
+  const out = [];
+  for (let i = 0; i < 9; i++) {
+    const gx = (i % 3) - 1, gz = Math.floor(i / 3) - 1;
+    const len = 0.5 + ((i * 7) % 5) * 0.16;
+    out.push({
+      size: [0.18, len, 0.18],
+      pos: [gx * 0.52, 0.84 - len / 2, gz * 0.52],
+      color: 0xd8d2cc,
+    });
+  }
+  return out;
+}
+
+// A ghast is mostly face. The eyes and mouth are inset on the -z side, which is
+// the direction every mob model in here faces, so it looks at what it is hunting.
+const GHAST = () => mergeBoxes([
+  { size: [1.58, 1.48, 1.58], pos: [0, 1.60, 0],         color: 0xe9e5e1 },
+  { size: [0.26, 0.24, 0.06], pos: [-0.34, 1.80, -0.80], color: 0x1c1420 },
+  { size: [0.26, 0.24, 0.06], pos: [0.34, 1.80, -0.80],  color: 0x1c1420 },
+  { size: [0.50, 0.26, 0.06], pos: [0, 1.36, -0.80],     color: 0x1c1420 },
+  ...ghastTentacles(),
+]);
+
 /**
  * drops: [itemId, chance, max] rolled on death.
  * ranged mobs keep their distance and shoot; 'explode' mobs run in and detonate.
+ * `neutral` mobs are hostile only once provoked, `floats` ones ignore gravity and
+ * steer in three dimensions, and `fireproof` ones can stand in lava.
  */
 const TYPES = {
   pig:      { build: PIG,      width: 0.9, height: 0.9, speed: 1.15, health: 10, hostile: false,
@@ -116,6 +160,15 @@ const TYPES = {
               explodes: true, drops: [[GUNPOWDER, 0.8, 2]] },
   spider:   { build: SPIDER,   width: 1.1, height: 0.7, speed: 2.6,  health: 12, hostile: true,
               attack: 2, drops: [[STRING, 1, 2]] },
+  // The Nether's two. A pigman leaves you alone until you hit one, and then so
+  // does every other pigman within earshot, which is the whole character of the
+  // place: nothing down there is safe, but most of it is your own fault.
+  pigman:   { build: PIGMAN,   width: 0.6, height: 1.9, speed: 1.9,  health: 20, hostile: true,
+              neutral: true, fireproof: true, nether: true, attack: 4,
+              drops: [[PORKCHOP, 1, 2], [QUARTZ, 0.4, 2]] },
+  ghast:    { build: GHAST,    width: 1.8, height: 2.4, speed: 1.2,  health: 10, hostile: true,
+              floats: true, fireball: true, fireproof: true, nether: true,
+              drops: [[GUNPOWDER, 0.9, 2]] },
 };
 
 class Mob {
@@ -134,6 +187,8 @@ class Mob {
     this.bob = Math.random() * 6;
     this.dead = false;
     this.fuse = 0;              // creepers only: counts up once you are close
+    this.provoked = false;      // neutral mobs only: set when something hits them
+    this.hover = position.y;    // floating mobs only: the altitude being sought
   }
 
   get center() {
@@ -167,6 +222,12 @@ export class Mobs {
     this.onDrop = null;            // (blockId, count, position) => void
     this.onExplode = null;         // (position, radius) => void
     this.arrows = new Arrows(scene, world);
+  }
+
+  /** Hide this dimension's mobs and anything they have in the air. */
+  setActive(on) {
+    this.group.visible = on;
+    this.arrows.group.visible = on;
   }
 
   spawn(type, x, y, z) {
@@ -210,10 +271,31 @@ export class Mobs {
     const toPlayer = new THREE.Vector3().subVectors(playerFeet, mob.position);
     const dist = toPlayer.length();
 
-    if (mob.def.hostile && dist < 18 && this.survival.enabled && !this.survival.dead) {
+    // Anything standing in lava burns. Nether mobs are fireproof, so in practice
+    // this is what happens to a creeper that chases you over the wrong edge.
+    if (!mob.def.fireproof && this.inLava(mob)) this.hurt(mob, dt * 6);
+
+    // Floating mobs steer vertically as part of thinking rather than falling,
+    // because an altitude they are holding is a decision, not physics.
+    if (mob.def.floats) this.steerHover(mob);
+
+    // A neutral mob is hostile only once something has hit it.
+    const angry = mob.def.hostile && (!mob.def.neutral || mob.provoked);
+    if (angry && dist < 18 && this.survival.enabled && !this.survival.dead) {
       mob.yaw = Math.atan2(toPlayer.x, toPlayer.z);
 
-      if (mob.def.ranged) {
+      if (mob.def.fireball) {
+        // A ghast holds off at range and lobs. Closing in would make it trivial
+        // to hit with a sword, and the thing is supposed to be a problem.
+        const want = dist < 9 ? -1 : (dist > 17 ? 1 : 0);
+        mob.velocity.x = Math.sin(mob.yaw) * mob.def.speed * want;
+        mob.velocity.z = Math.cos(mob.yaw) * mob.def.speed * want;
+        if (dist < 22 && mob.attackCooldown === 0) {
+          mob.attackCooldown = 3.0;
+          this.arrows.fire(mob.center, playerFeet.clone().setY(playerFeet.y + 1.0), 13,
+            false, 'fireball');
+        }
+      } else if (mob.def.ranged) {
         // Skeletons hold a firing line instead of closing to melee.
         const want = dist < 5 ? -1 : (dist > 9 ? 1 : 0);
         mob.velocity.x = Math.sin(mob.yaw) * mob.def.speed * want;
@@ -265,8 +347,42 @@ export class Mobs {
     mob.velocity.z = mob.wander.y * mob.def.speed;
   }
 
+  /**
+   * Hold an altitude a few blocks above whatever floor is below. Scanning for the
+   * floor each time rather than remembering one is what lets a ghast drift out
+   * over the lava sea and rise as the ground falls away beneath it.
+   */
+  steerHover(mob) {
+    const x = Math.floor(mob.position.x), z = Math.floor(mob.position.z);
+    let ground = null;
+    for (let y = Math.floor(mob.position.y); y > 0 && y > mob.position.y - 24; y--) {
+      if (isSolid(this.world.get(x, y, z))) { ground = y; break; }
+    }
+    if (ground !== null) mob.hover = Math.min(SY - 5, ground + 7);
+    mob.velocity.y = THREE.MathUtils.clamp((mob.hover - mob.position.y) * 0.9, -1.6, 1.6);
+  }
+
+  /** Is any part of this mob standing in lava? */
+  inLava(mob) {
+    const x = Math.floor(mob.position.x), z = Math.floor(mob.position.z);
+    return isLava(this.world.get(x, Math.floor(mob.position.y + 0.1), z))
+        || isLava(this.world.get(x, Math.floor(mob.position.y + mob.def.height * 0.5), z));
+  }
+
   physics(dt, mob) {
     dt = Math.min(dt, 0.05);
+
+    if (mob.def.floats) {
+      // No gravity and no ground: it moves on all three axes and simply stops
+      // against anything solid, which is enough for something that never jumps.
+      for (const axis of ['y', 'x', 'z']) {
+        const before = mob.position[axis];
+        mob.position[axis] += mob.velocity[axis] * dt;
+        if (this.collides(mob)) { mob.position[axis] = before; mob.velocity[axis] = 0; }
+      }
+      return;
+    }
+
     mob.velocity.y -= 26 * dt;
     if (mob.velocity.y < -40) mob.velocity.y = -40;
 
@@ -335,9 +451,11 @@ export class Mobs {
     mob.mesh.position.set(mob.position.x, mob.position.y, mob.position.z);
     mob.mesh.rotation.y = mob.yaw;
     // A bob and slight roll stand in for limb animation at VR viewing distance.
-    const walking = Math.hypot(mob.velocity.x, mob.velocity.z) > 0.2;
+    const walking = !mob.def.floats && Math.hypot(mob.velocity.x, mob.velocity.z) > 0.2;
     mob.mesh.position.y += walking ? Math.abs(Math.sin(mob.bob)) * 0.06 : 0;
     mob.mesh.rotation.z = walking ? Math.sin(mob.bob) * 0.05 : 0;
+    // A floater sways instead, on a slow cycle that never quite repeats.
+    if (mob.def.floats) mob.mesh.position.y += Math.sin(mob.bob * 0.35) * 0.12;
     // A creeper about to go off blinks, which is the only warning you get.
     const priming = mob.fuse > 0 && Math.sin(mob.fuse * 22) > 0;
     mob.mesh.material = (mob.hurtFlash > 0 || priming) ? this.hurtMaterial : this.material;
@@ -347,7 +465,15 @@ export class Mobs {
   hurt(mob, amount) {
     mob.health -= amount;
     mob.hurtFlash = 0.3;
-    mob.velocity.y = Math.max(mob.velocity.y, 2.5);
+    if (!mob.def.floats) mob.velocity.y = Math.max(mob.velocity.y, 2.5);
+    // Hitting one of a neutral kind angers every one of that kind nearby. It is
+    // the behaviour that makes pigmen frightening rather than scenery.
+    if (mob.def.neutral && !mob.provoked) {
+      for (const other of this.list) {
+        if (other.def !== mob.def || other.dead) continue;
+        if (other.position.distanceTo(mob.position) < 16) other.provoked = true;
+      }
+    }
     if (mob.health <= 0 && !mob.dead) {
       mob.dead = true;
       this.rollDrops(mob);
@@ -362,11 +488,14 @@ export class Mobs {
     }
   }
 
-  /** Blows a spherical hole in the world and hurts everything nearby. */
   explode(mob) {
     mob.dead = true;
-    const radius = 3.2;
-    const cx = Math.floor(mob.position.x), cy = Math.floor(mob.position.y), cz = Math.floor(mob.position.z);
+    this.blast(mob.center, 3.2, 'a creeper');
+  }
+
+  /** Blows a spherical hole in the world and hurts everything nearby. */
+  blast(center, radius, cause = 'an explosion') {
+    const cx = Math.floor(center.x), cy = Math.floor(center.y), cz = Math.floor(center.z);
     const r = Math.ceil(radius);
     for (let y = cy - r; y <= cy + r; y++) {
       for (let z = cz - r; z <= cz + r; z++) {
@@ -375,12 +504,14 @@ export class Mobs {
           // Ragged edge rather than a perfect sphere.
           if (d > radius - 0.5 + Math.random() * 0.9) continue;
           const id = this.world.get(x, y, z);
-          if (id === AIR || block(id).hardness === null) continue;
+          // Obsidian is on the blast-proof list, which is what stops a ghast
+          // from erasing the portal you arrived through while you are down there.
+          if (id === AIR || isBlastProof(id)) continue;
           this.world.set(x, y, z, AIR);
         }
       }
     }
-    if (this.onExplode) this.onExplode(mob.center, radius);
+    if (this.onExplode) this.onExplode(center.clone(), radius, cause);
     sfx.explode();
   }
 
@@ -399,6 +530,7 @@ export class Mobs {
   }
 
   tryNaturalSpawn(player) {
+    if (this.world.nether) return this.tryNetherSpawn(player);
     const night = this.survival.isNight;
     const passive = this.list.filter((m) => !m.def.hostile && !m.dead).length;
     const hostile = this.list.filter((m) => m.def.hostile && !m.dead).length;
@@ -428,11 +560,36 @@ export class Mobs {
       return;
     }
   }
+
+  /**
+   * The Nether has no night to wait for and no sky to be exposed to, so it
+   * populates whenever there is room. standY does the work of finding ground,
+   * since the top of a column down there is the underside of the roof.
+   */
+  tryNetherSpawn(player) {
+    if (this.list.filter((m) => !m.dead).length >= 9) return;
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 15 + Math.random() * 16;
+      const x = Math.floor(player.position.x + Math.cos(angle) * r);
+      const z = Math.floor(player.position.z + Math.sin(angle) * r);
+      const y = this.world.standY(x, z);
+      if (y < 2 || y > SY - 6) continue;
+
+      // Ghasts are the rarer of the two, and start well above the floor.
+      const ghast = Math.random() < 0.28;
+      const mob = this.spawn(ghast ? 'ghast' : 'pigman', x + 0.5, ghast ? y + 5 : y, z + 0.5);
+      if (mob && this.collides(mob)) mob.dead = true;
+      return;
+    }
+  }
 }
 
 /**
- * Arrows, fired by skeletons and by the player's bow. A small pool of boxes with
- * ballistic motion; they stick nothing, they just hit and vanish.
+ * Arrows and ghast fireballs. A small pool of boxes with ballistic motion; they
+ * stick in nothing, they just hit and vanish. A fireball differs in three ways
+ * and no more: it flies flat, it is slower, and arriving makes a crater.
  */
 class Arrows {
   constructor(scene, world) {
@@ -444,24 +601,35 @@ class Arrows {
       { size: [0.06, 0.06, 0.5], pos: [0, 0, 0], color: 0x8a6636 },
       { size: [0.09, 0.09, 0.12], pos: [0, 0, -0.28], color: 0xd8d8dc },
     ]);
+    this.fireballGeometry = mergeBoxes([
+      { size: [0.44, 0.44, 0.44], pos: [0, 0, 0], color: 0xffb648 },
+      { size: [0.52, 0.22, 0.22], pos: [0, 0, 0], color: 0xff7a24 },
+      { size: [0.22, 0.52, 0.22], pos: [0, 0, 0], color: 0xff7a24 },
+    ]);
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
   }
 
-  /** Lobs an arrow from `from` towards `to`, with a little lift for the drop. */
-  fire(from, to, speed, fromPlayer = false) {
+  /** Lobs a projectile from `from` towards `to`, with a little lift for the drop. */
+  fire(from, to, speed, fromPlayer = false, kind = 'arrow') {
+    const fireball = kind === 'fireball';
     const dir = new THREE.Vector3().subVectors(to, from);
     const dist = dir.length();
     dir.normalize();
-    dir.y += Math.min(0.35, dist * 0.018);          // crude ballistic lead
-    dir.normalize();
+    // A fireball is aimed, not lobbed: it carries no gravity, so leading the
+    // shot upwards would simply make it miss over the player's head.
+    if (!fireball) {
+      dir.y += Math.min(0.35, dist * 0.018);          // crude ballistic lead
+      dir.normalize();
+    }
 
-    const mesh = new THREE.Mesh(this.geometry, this.material);
+    const mesh = new THREE.Mesh(fireball ? this.fireballGeometry : this.geometry, this.material);
     this.group.add(mesh);
     this.list.push({
       position: from.clone(),
       velocity: dir.multiplyScalar(speed),
-      life: 4,
+      life: fireball ? 6 : 4,
       fromPlayer,
+      fireball,
       mesh,
     });
     sfx.shoot();
@@ -471,15 +639,17 @@ class Arrows {
     const step = Math.min(dt, 0.05);
     for (const a of this.list) {
       a.life -= step;
-      a.velocity.y -= 14 * step;
+      if (!a.fireball) a.velocity.y -= 14 * step;
       a.position.addScaledVector(a.velocity, step);
 
       a.mesh.position.copy(a.position);
       a.mesh.lookAt(a.position.clone().add(a.velocity));
+      if (a.fireball) a.mesh.rotation.z += step * 6;
 
       if (isSolid(this.world.get(
         Math.floor(a.position.x), Math.floor(a.position.y), Math.floor(a.position.z)))) {
         a.life = 0;
+        if (a.fireball) mobs.blast(a.position.clone(), 2.0, 'a fireball');
         continue;
       }
 
@@ -488,10 +658,17 @@ class Arrows {
         if (hit) { mobs.hurt(hit, 5); a.life = 0; }
       } else if (survival.enabled && !survival.dead) {
         const feet = player.position;
-        const near = Math.abs(a.position.x - feet.x) < 0.5
-          && Math.abs(a.position.z - feet.z) < 0.5
+        // A fireball is wide enough to catch you without a direct hit, which is
+        // what makes dodging one a matter of getting behind something.
+        const reach = a.fireball ? 1.1 : 0.5;
+        const near = Math.abs(a.position.x - feet.x) < reach
+          && Math.abs(a.position.z - feet.z) < reach
           && a.position.y > feet.y - 0.2 && a.position.y < feet.y + 1.9;
-        if (near) { survival.damage(2, 'an arrow'); a.life = 0; }
+        if (near) {
+          a.life = 0;
+          if (a.fireball) mobs.blast(a.position.clone(), 2.0, 'a fireball');
+          else survival.damage(2, 'an arrow');
+        }
       }
     }
 

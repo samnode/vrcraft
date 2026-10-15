@@ -132,6 +132,85 @@ cliff along the whole seam. Peaks approach the world roof asymptotically instead
 of being clamped against it, which is the difference between a rounded summit and
 a sliced-off plateau.
 
+## The Nether
+
+A second dimension, reached the way you would expect: a frame of obsidian, lit
+with flint and steel.
+
+Obsidian is the gate to it. It sits in seams in the bottom thirteen layers of the
+overworld, and nothing short of an iron pickaxe will take it — so the Nether is
+not somewhere you reach before you have tooled up. Ten blocks builds a frame two
+wide and three tall; corners are optional, exactly as in Minecraft. Flint and
+steel costs an iron ingot and a lump of coal, which is the one recipe here that
+departs from Minecraft: there is no gravel to knap flint out of, so the striker
+is coal, which is at least the right idea.
+
+Strike the frame and the air inside turns to a sheet of drifting purple. Stand in
+it for a moment and you are through.
+
+Nothing about a portal is recorded anywhere. It is recognised rather than
+remembered: a rectangle of air completely ringed by obsidian in one vertical
+plane, found by flooding the air and checking what the flood stopped against.
+Because the flood only ever steps in four directions, the ring it tests is
+exactly Minecraft's — the diagonal corners are never consulted, so leaving them
+off still works. That one rule is the whole detector, and it means a portal
+survives its chunk unloading and reloading with no bookkeeping at all. Break one
+block of the frame and the sheet goes out, because the frame was the only record
+of it.
+
+### What is down there
+
+One enormous cavern rather than a landscape. A lava sea at the bottom, a rock
+roof you cannot see past at the top, and a floor of netherrack between them,
+generated as a floor height and a roof height per column with 3D noise eating
+hollows out of both. Where the floor comes out below the sea the column floods
+and you get a lava lake; where it comes out above you get dry ground to walk on.
+Columns of rock bridge the two, tapering as they climb so they read as
+stalagmites rather than walls.
+
+Glowstone grows on the ceiling in clusters and is most of the light. Quartz ore
+runs through the netherrack. Soul sand drifts across the open floor. Obsidian
+crusts the lava shore, which matters more than it looks: it is a second source of
+portal frame for anyone who arrives and loses theirs.
+
+The Nether has **no sky light at all** — that is the thing that makes it a
+different place rather than a red cave. Under that roof the usual day/night term
+has nothing left to multiply, so the dimension carries its own ambient floor: a
+dim red that everything is seen through, with glowstone, lava and your own
+torches as the only real light. There is no sun, no moon, no stars and no clouds,
+and the horizon ends in red fog at a much shorter distance than the overworld's.
+
+Lava burns at roughly Minecraft's rate: about three seconds to kill you with
+nothing on, eight or so in a full set of iron. You can climb out, but at half the
+lift and a third of the speed, and the burn is counting the whole time.
+
+Two things live there. **Zombie pigmen** leave you alone until you hit one — and
+then so does every other pigman within sixteen blocks, which is the character of
+the place in one rule: nothing down there is safe, but most of it is your own
+fault. **Ghasts** float, hold off at fifteen blocks or so, and lob fireballs that
+blow craters in the rock. Obsidian is on the blast-proof list, so a ghast cannot
+erase the portal you arrived through.
+
+### Travelling
+
+The destination is the same place at a different scale: one block in the Nether
+is eight in the overworld, which is the entire reason to use it to get somewhere.
+Walk a hundred blocks down there and come back up eight hundred from where you
+started.
+
+If a portal is already waiting at the far end, you come out of it. If there is
+not, one is built — frame, platform and all. Arriving is not allowed to fail: a
+player who lands inside rock or falls out of the world has no way of
+understanding what went wrong, so the site search looks for ground with head room
+for the frame, and hangs an obsidian pad in the open if the whole search square
+turns out to be lava and pillar.
+
+Both dimensions stay resident for the session. Only the one you are in is
+simulated and drawn; the other keeps its voxels, its herds and anything lying on
+its ground exactly where they were, frozen until you come back. Dying in the
+Nether drops your things in the Nether and wakes you up at your overworld spawn,
+which is a considerably longer walk back than usual.
+
 ## Armour and dying
 
 Two sets: leather off the cows, iron out of the furnace. A cap costs five, a
@@ -213,18 +292,25 @@ is pushed back rather than letting your head pass through the blocks.
   humidity. Deserts lay sand over sandstone and grow cacti, the taiga is snow and
   stepped conifers, and mountains change with altitude rather than climate: grass
   at the foot, bare rock higher, snow on the caps.
-- **Building** — 27 placeable blocks, every one reachable from the creative
+- **Building** — 34 placeable blocks, every one reachable from the creative
   palette, including torches, crafting tables and furnaces. Breaking respects
   hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside
   terrain, say — and the player is lifted clear rather than stuck.
-- **Crafting** — 38 recipes across wood, stone and iron, gated by whether a
-  crafting table or furnace is within four blocks of you.
+- **The Nether** — a second dimension behind an obsidian portal lit with flint and
+  steel: a lava sea under a rock roof, glowstone ceilings, quartz ore, soul sand
+  and no sky light at all. One block down there is eight up here, so it is a
+  short cut as well as a place. Portals are recognised from the obsidian around
+  them rather than recorded anywhere, so they survive chunk streaming untouched.
+- **Crafting** — 41 recipes across wood, stone, iron and netherrack, gated by
+  whether a crafting table or furnace is within four blocks of you.
 - **Armour** — leather and iron sets in four pieces each, worn into dedicated
   slots and soaking damage at Minecraft's four percent per point. Death takes
   your whole inventory and everything you had on.
-- **Mobs** — eight kinds: four passive animals, plus zombies, arrow-firing
-  skeletons, creepers that detonate and destroy terrain, and fast night spiders.
+- **Mobs** — ten kinds: four passive animals, plus zombies, arrow-firing
+  skeletons, creepers that detonate and destroy terrain, and fast night spiders;
+  and in the Nether, zombie pigmen that are neutral until provoked and ghasts
+  that float out of reach lobbing fireballs.
 - **Hands** — whatever you have selected is held in your right fist and modelled
   in 3D: tools and the bow out of boxes, full blocks as a textured cube, and
   everything else as its icon extruded into a solid. In VR the hand rides the
@@ -268,15 +354,16 @@ src/
   terrain.js        Chunk streaming with a per-frame time budget
   player.js         Collision, locomotion, room-scale rig handling
   interact.js       Breaking, placing, mining progress, hit detection
-  mobs.js           Pig and zombie AI, merged single-draw-call models
+  mobs.js           Mob AI and projectiles, merged single-draw-call models
   survival.js       Day/night cycle, health, hunger
   inventory.js      Hotbar and stacks
   blocks.js         Block and item registry, tool rules
   crafting.js       Recipes, station requirements, craft and smelt
   craftui.js        Crafting panel, shared by the desktop overlay and VR
   items.js          Items lying on the ground: death drops, loot, overflow
+  portal.js         Nether portals: recognising a frame, lighting it, travelling
   held.js           First-person hands and the model of whatever you are holding
-  sky.js            Sky dome, sun, moon, clouds, stars
+  sky.js            Sky dome, sun, moon, clouds, stars, and the Nether's lack of them
   textures.js       Procedurally painted texture atlas (no image files)
   raycast.js        Voxel DDA for aiming
   ui.js             Canvas HUD, shared by the desktop overlay and VR wrist panel
@@ -298,6 +385,14 @@ this build:
   large edit always costs at least one full rebuild in the frame that follows.
 - A loaded view at radius 4: ~70 chunk columns, 30–40 draw calls after frustum
   culling, ~60k triangles. The sky dome, clouds, sun and moon add four more.
+- The Nether, at radius 3: **~0.1 ms** idle, 45 draw calls, ~114k triangles —
+  cheaper than the overworld despite a floor and a roof in every column, because
+  it is drawn three chunks out rather than four. Forty items lying on the ground
+  cost nothing measurable.
+- Stepping through a portal: **~110 ms**, once. That is the one deliberate hitch
+  in the game — the outgoing dimension's meshes are released and the arrival is
+  generated, lit and meshed on the spot, because arriving in an unbuilt world is
+  worse than a dropped frame at a moment the player expects a transition.
 
 Design choices behind those numbers: one mesh per 16×64×16 column rather than per
 sub-chunk, so draw calls stay low; a padded voxel/light cache per rebuild so the

@@ -24,6 +24,8 @@ export const TILES = [
   'leather_helmet', 'leather_chest', 'leather_legs', 'leather_boots',
   'iron_helmet', 'iron_chest', 'iron_legs', 'iron_boots',
   'snow', 'snow_side', 'sandstone', 'cactus_top', 'cactus_side', 'spruce_leaves',
+  'netherrack', 'lava', 'soul_sand', 'quartz_ore', 'quartz_block', 'nether_brick',
+  'obsidian', 'portal', 'quartz', 'flint_steel',
 ];
 
 const tile = {};
@@ -178,6 +180,23 @@ export const SANDSTONE     = add(def(72, 'Sandstone',   { all: tile.sandstone, h
 export const CACTUS        = add(def(73, 'Cactus',      { top: tile.cactus_top, side: tile.cactus_side, hardness: 0.4, material: MAT.PLANT }));
 export const SPRUCE_LEAVES = add(def(74, 'Spruce Leaves', { all: tile.spruce_leaves, hardness: 0.2, opaque: false, material: MAT.PLANT }));
 
+// ---------------------------------------------------------------- the Nether
+// Netherrack is deliberately soft: the dimension is meant to be tunnelled
+// through, and making its bulk rock as slow as stone would turn every trip into
+// a chore. Obsidian is the opposite extreme and the gate to the whole place —
+// nothing but an iron pickaxe touches it.
+export const NETHERRACK   = add(def(75, 'Netherrack',   { all: tile.netherrack, hardness: 0.4, material: MAT.STONE, requiresTier: 1, varyTexture: true }));
+export const LAVA         = add(def(76, 'Lava',         { all: tile.lava, hardness: null, opaque: false, solid: false, liquid: true, light: 15, drop: null, varyTexture: true }));
+export const SOUL_SAND    = add(def(77, 'Soul Sand',    { all: tile.soul_sand, hardness: 0.5, material: MAT.DIRT, varyTexture: true }));
+export const QUARTZ_ORE   = add(def(78, 'Quartz Ore',   { all: tile.quartz_ore, hardness: 1.5, material: MAT.STONE, requiresTier: 1, drop: 82 }));
+export const NETHER_BRICK = add(def(79, 'Nether Brick', { all: tile.nether_brick, hardness: 2.0, material: MAT.STONE, requiresTier: 1 }));
+export const OBSIDIAN     = add(def(80, 'Obsidian',     { all: tile.obsidian, hardness: 18, material: MAT.STONE, requiresTier: 3 }));
+// The portal sheet itself: never mined, never placed, only lit and extinguished.
+export const PORTAL       = add(def(81, 'Nether Portal', { all: tile.portal, hardness: null, opaque: false, solid: false, light: 11, drop: null, shape: 'portal' }));
+export const QUARTZ       = add(def(82, 'Nether Quartz', { all: tile.quartz, item: true }));
+export const FLINT_STEEL  = add(def(83, 'Flint and Steel', { all: tile.flint_steel, item: true }));
+export const QUARTZ_BLOCK = add(def(84, 'Quartz Block', { all: tile.quartz_block, hardness: 0.8, material: MAT.STONE, requiresTier: 1 }));
+
 // Never placed from the hand or listed anywhere: it only ever appears next to a
 // BED that was just placed, and breaks with it.
 export const BED_HEAD = add(def(61, 'Bed', { all: tile.bed_item, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'bed', use: 'bed', drop: 46, parts: BED_PARTS }));
@@ -190,7 +209,19 @@ export function isArmor(id) { return id !== AIR && !!BLOCKS[id] && !!BLOCKS[id].
 export function bedPartnerId(id) { return id === 46 ? 61 : 46; }
 export function isOpaque(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].opaque; }
 export function isSolid(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].solid; }
-export function isLiquid(id) { return id === WATER; }
+export function isLiquid(id) { return LIQUID_LUT[id] === 1; }
+/** Water and lava part company anywhere one is survivable and the other is not. */
+export function isWater(id) { return id === WATER; }
+export function isLava(id) { return id === LAVA; }
+export function isPortal(id) { return id === PORTAL; }
+/**
+ * Too tough for a blast to clear. Keeping obsidian on this list is what stops a
+ * ghast's fireball from erasing the portal you arrived through.
+ */
+export function isBlastProof(id) {
+  const b = BLOCKS[id];
+  return !!b && (b.hardness === null || b.hardness > 10);
+}
 export function isItem(id) { return id !== AIR && !!BLOCKS[id] && BLOCKS[id].item; }
 /** Items cannot be placed; neither can anything with no block form. */
 export function isPlaceable(id) { return id !== AIR && !!BLOCKS[id] && !BLOCKS[id].item; }
@@ -225,6 +256,7 @@ export const CREATIVE_PALETTE = [
   GLASS, GLOWSTONE, TORCH, TABLE, FURNACE, DOOR_CLOSED, LADDER, BED,
   STONE_SLAB, WOOD_SLAB, COAL_ORE, IRON_ORE,
   SNOW, SNOWY_GRASS, SANDSTONE, CACTUS, SPRUCE_LEAVES,
+  NETHERRACK, SOUL_SAND, NETHER_BRICK, QUARTZ_BLOCK, QUARTZ_ORE, OBSIDIAN, LAVA,
 ];
 export const SURVIVAL_SLOTS = 18;
 
@@ -234,6 +266,7 @@ export const POST_LUT = new Uint8Array(256);
 export const SLAB_LUT = new Uint8Array(256);
 export const PANEL_LUT = new Uint8Array(256);
 export const BED_LUT = new Uint8Array(256);
+export const PORTAL_LUT = new Uint8Array(256);
 export const CLIMB_LUT = new Uint8Array(256);
 export const LIQUID_LUT = new Uint8Array(256);
 export const VARY_LUT = new Uint8Array(256);
@@ -247,6 +280,7 @@ for (let i = 1; i < BLOCKS.length; i++) {
   SLAB_LUT[i] = b.shape === 'slab' ? 1 : 0;
   PANEL_LUT[i] = b.shape === 'panel' ? 1 : 0;
   BED_LUT[i] = b.shape === 'bed' ? 1 : 0;
+  PORTAL_LUT[i] = b.shape === 'portal' ? 1 : 0;
   LIQUID_LUT[i] = b.liquid ? 1 : 0;
   VARY_LUT[i] = b.varyTexture ? 1 : 0;
 }

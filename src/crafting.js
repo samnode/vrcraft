@@ -14,8 +14,9 @@ import {
   STRING, FEATHER, ARROW, BOW, BONE, LEATHER,
   LEATHER_HELMET, LEATHER_CHEST, LEATHER_LEGS, LEATHER_BOOTS,
   IRON_HELMET, IRON_CHEST, IRON_LEGS, IRON_BOOTS,
+  FLINT_STEEL, NETHERRACK, NETHER_BRICK, QUARTZ, QUARTZ_BLOCK,
   block,
-} from './blocks.js?v=20';
+} from './blocks.js?v=31';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });
@@ -65,12 +66,19 @@ export const RECIPES = [
   r(IRON_LEGS, 1, [[IRON_INGOT, 7]], 'table'),
   r(IRON_BOOTS, 1, [[IRON_INGOT, 4]], 'table'),
 
+  // The Nether. Flint and steel is the one recipe that departs from Minecraft:
+  // there is no gravel here to knap flint out of, so the striker is coal, which
+  // is at least the right idea — something that sparks against steel.
+  r(FLINT_STEEL, 1, [[IRON_INGOT, 1], [COAL, 1]], 'table'),
+  r(QUARTZ_BLOCK, 1, [[QUARTZ, 4]], 'table'),
+
   // Smelting: a furnace plus coal for fuel.
   r(IRON_INGOT, 1, [[IRON_ORE, 1], [COAL, 1]], 'furnace'),
   r(GLASS, 1, [[SAND, 1], [COAL, 1]], 'furnace'),
   r(COOKED_BEEF, 1, [[BEEF, 1], [COAL, 1]], 'furnace'),
   r(COOKED_PORK, 1, [[PORKCHOP, 1], [COAL, 1]], 'furnace'),
   r(COOKED_CHICKEN, 1, [[RAW_CHICKEN, 1], [COAL, 1]], 'furnace'),
+  r(NETHER_BRICK, 1, [[NETHERRACK, 1], [COAL, 1]], 'furnace'),
 ];
 
 export function hasIngredients(recipe, inventory) {
