@@ -1,8 +1,8 @@
 // Day/night cycle, health and hunger. The cycle drives one shader uniform plus the
 // sky and fog colour, so terrain lighting costs nothing extra at runtime.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { block } from './blocks.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { block } from './blocks.js?v=37';
 
 const DAY_SECONDS = 600;                 // one full in-game day
 const MAX_HEALTH = 20, MAX_HUNGER = 20;

@@ -2,3 +2,4 @@
 .devcert.pem
 
 .DS_Store
+.claude/

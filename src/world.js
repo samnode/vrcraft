@@ -8,19 +8,29 @@
 // has loaded yet" — 15 under an open sky, 0 under a rock roof. Both stay resident
 // while you play, so the house you built is still standing when you come back.
 
-import { fbm2, value3, rand2 } from './noise.js?v=31';
+import { fbm2, value3, rand2 } from './noise.js?v=37';
 import {
   AIR, GRASS, DIRT, STONE, SAND, LOG, LEAVES, WATER, COAL_ORE, IRON_ORE,
   SNOW, SNOWY_GRASS, SANDSTONE, CACTUS, SPRUCE_LEAVES,
-  NETHERRACK, LAVA, SOUL_SAND, QUARTZ_ORE, OBSIDIAN, GLOWSTONE,
+  NETHERRACK, LAVA, SOUL_SAND, QUARTZ_ORE, OBSIDIAN, GLOWSTONE, TORCH,
+  END_STONE, STONE_BRICK, END_FRAME,
   block, isOpaque, isSolid,
-} from './blocks.js?v=31';
+} from './blocks.js?v=37';
 
 export const SX = 16, SY = 64, SZ = 16;
 export const SEA_LEVEL = 26;
 // The Nether's lava sea, and the band of rock its roof occupies.
 export const NETHER_SEA = 10;
-export const DIM = { OVERWORLD: 'overworld', NETHER: 'nether' };
+export const DIM = { OVERWORLD: 'overworld', NETHER: 'nether', END: 'end' };
+// The End. There is no sea level down here and no bedrock: a column with
+// nothing in it is a hole you fall through, which is most of them.
+export const END_SURFACE = 34;
+const END_MAIN_EDGE = 62;        // past this the main island cannot reach
+const END_GAP = 88;              // and nothing at all exists until here
+// One stronghold per square of this size, jittered inside it. Large enough that
+// finding one is an expedition, small enough that there is always one to find.
+export const STRONGHOLD_GRID = 448;
+const ROOM_R = 6, ROOM_FLOOR = 8, ROOM_TOP = 14;
 // Horizontal squeeze between the two dimensions, as in Minecraft: one step here
 // is eight over there, which is the entire reason to travel through the Nether.
 export const NETHER_SCALE = 8;
@@ -71,13 +81,16 @@ export class World {
     this.seed = seed;
     this.kind = kind;
     this.nether = kind === DIM.NETHER;
+    this.end = kind === DIM.END;
     this.chunks = new Map();
     // Sky light where there is no chunk to ask, and above the world roof. The
     // Nether answers 0, which is what makes it genuinely dark rather than
     // merely tinted — and it means breaking through the roof lets in nothing.
+    // The End answers 15: it has an open sky, that sky is simply black.
     this.skyDefault = this.nether ? 0 : 15;
-    // What lies below y=0. Only the mesher sees it, to cull the bottom face.
-    this.baseBlock = this.nether ? NETHERRACK : STONE;
+    // What lies below y=0. Only the mesher sees it, to cull the bottom face —
+    // except in the End, where answering air is what makes the void a void.
+    this.baseBlock = this.nether ? NETHERRACK : (this.end ? AIR : STONE);
   }
 
   getChunk(cx, cz, create = false) {
@@ -217,6 +230,7 @@ export class World {
 
   generate(c) {
     if (this.nether) this.generateNether(c);
+    else if (this.end) this.generateEnd(c);
     else this.generateOverworld(c);
   }
 
@@ -257,6 +271,7 @@ export class World {
     }
 
     this.plantTrees(c);
+    this.plantStronghold(c);
     c.generated = true;
   }
 
@@ -442,6 +457,156 @@ export class World {
     }
   }
 
+  // ------------------------------------------------------------ strongholds
+
+  /**
+   * Where the stronghold in one grid cell sits. Pure function of the cell and
+   * the seed, so every chunk that overlaps the room agrees on it without any
+   * of them having to know a room exists — the same trick the trees use.
+   */
+  strongholdIn(gx, gz) {
+    const inset = 90;
+    return {
+      x: gx * STRONGHOLD_GRID + inset + Math.floor(rand2(gx, gz, this.seed + 6001) * (STRONGHOLD_GRID - inset * 2)),
+      z: gz * STRONGHOLD_GRID + inset + Math.floor(rand2(gx, gz, this.seed + 6002) * (STRONGHOLD_GRID - inset * 2)),
+    };
+  }
+
+  /** The nearest stronghold to a point, which is what an eye of ender reports. */
+  nearestStronghold(x, z) {
+    const gx = Math.floor(x / STRONGHOLD_GRID), gz = Math.floor(z / STRONGHOLD_GRID);
+    let best = null, bestD = Infinity;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const s = this.strongholdIn(gx + dx, gz + dz);
+        const d = Math.hypot(s.x - x, s.z - z);
+        if (d < bestD) { bestD = d; best = s; }
+      }
+    }
+    return { x: best.x, z: best.z, y: ROOM_FLOOR + 1, distance: bestD };
+  }
+
+  /** Build any stronghold room whose footprint reaches into this chunk. */
+  plantStronghold(c) {
+    const ox = c.cx * SX, oz = c.cz * SZ;
+    const gx = Math.floor((ox + SX / 2) / STRONGHOLD_GRID);
+    const gz = Math.floor((oz + SZ / 2) / STRONGHOLD_GRID);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const s = this.strongholdIn(gx + dx, gz + dz);
+        if (s.x + ROOM_R < ox || s.x - ROOM_R >= ox + SX) continue;
+        if (s.z + ROOM_R < oz || s.z - ROOM_R >= oz + SZ) continue;
+        this.strongholdRoom(c, s.x, s.z);
+      }
+    }
+  }
+
+  /**
+   * A sealed vault of stone brick with the portal frame in the middle of it.
+   * Written as a solid box and then hollowed rather than as six faces: it is
+   * shorter, and it guarantees the room is sealed whatever the cave noise did
+   * to the rock around it. Nothing connects it to the surface — the eye of
+   * ender gives you the coordinates and you dig.
+   */
+  strongholdRoom(c, sx, sz) {
+    const put = this.writer(c);
+    for (let y = ROOM_FLOOR - 1; y <= ROOM_TOP; y++) {
+      for (let dz = -ROOM_R; dz <= ROOM_R; dz++) {
+        for (let dx = -ROOM_R; dx <= ROOM_R; dx++) put(sx + dx, y, sz + dz, STONE_BRICK, true);
+      }
+    }
+    for (let y = ROOM_FLOOR + 1; y < ROOM_TOP; y++) {
+      for (let dz = -ROOM_R + 1; dz <= ROOM_R - 1; dz++) {
+        for (let dx = -ROOM_R + 1; dx <= ROOM_R - 1; dx++) put(sx + dx, y, sz + dz, AIR, true);
+      }
+    }
+    // Twelve frames in a ring, corners left out, and a lava pit under the
+    // opening so the hole in the floor reads as a hole before it is a portal.
+    for (let dz = -2; dz <= 2; dz++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const ring = Math.max(Math.abs(dx), Math.abs(dz)) === 2;
+        const corner = Math.abs(dx) === 2 && Math.abs(dz) === 2;
+        if (ring && !corner) { put(sx + dx, ROOM_FLOOR + 1, sz + dz, END_FRAME, true); continue; }
+        if (ring) continue;
+        put(sx + dx, ROOM_FLOOR + 1, sz + dz, AIR, true);
+        put(sx + dx, ROOM_FLOOR, sz + dz, LAVA, true);
+      }
+    }
+    for (const [dx, dz] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) {
+      put(sx + dx, ROOM_FLOOR + 1, sz + dz, TORCH, true);
+    }
+  }
+
+  // ---------------------------------------------------------------- the End
+
+  /**
+   * The island, if any, standing at this column: a top and a bottom with void
+   * above and below. One central island, a ring of nothing around it, and then
+   * outer islands scattered out of a single noise field.
+   */
+  endIsland(x, z) {
+    const d = Math.hypot(x, z);
+    if (d < END_MAIN_EDGE) {
+      // The rim is eaten by noise so the main island is not a drawn circle.
+      const radius = 40 + fbm2(x / 24, z / 24, this.seed + 7001, 3) * 20;
+      if (d > radius) return null;
+      const t = 1 - d / radius;
+      const top = END_SURFACE + Math.floor(fbm2(x / 19, z / 19, this.seed + 7002, 3) * 5);
+      // Domed underside: thick at the centre, thinning to a lip at the edge.
+      return { top, bottom: top - (2 + Math.floor(Math.pow(t, 0.55) * 14)) };
+    }
+    if (d < END_GAP) return null;
+    const blob = fbm2(x / 30, z / 30, this.seed + 7003, 3);
+    if (blob < 0.615) return null;
+    const t = Math.min(1, (blob - 0.615) / 0.2);
+    const top = 24 + Math.floor(fbm2(x / 22, z / 22, this.seed + 7004, 3) * 18);
+    return { top, bottom: top - (2 + Math.floor(t * 9)) };
+  }
+
+  generateEnd(c) {
+    const ox = c.cx * SX, oz = c.cz * SZ;
+    for (let lz = 0; lz < SZ; lz++) {
+      for (let lx = 0; lx < SX; lx++) {
+        const island = this.endIsland(ox + lx, oz + lz);
+        if (!island) continue;
+        const from = Math.max(1, island.bottom);
+        const to = Math.min(SY - 1, island.top);
+        for (let y = from; y <= to; y++) c.set(lx, y, lz, END_STONE);
+      }
+    }
+    this.endPillars(c);
+    c.generated = true;
+  }
+
+  /**
+   * Ten obsidian pillars ringing the centre, each lit at the top. They are the
+   * only vertical thing in the End and the only landmark on a flat island, so
+   * they are placed by angle rather than by noise — a ring reads as built.
+   */
+  endPillars(c) {
+    const put = this.writer(c);
+    const ox = c.cx * SX, oz = c.cz * SZ;
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2;
+      const r = 28 + (i % 3) * 5;
+      const px = Math.round(Math.cos(angle) * r), pz = Math.round(Math.sin(angle) * r);
+      const w = 1 + (i % 2);
+      if (px + w < ox || px - w >= ox + SX || pz + w < oz || pz - w >= oz + SZ) continue;
+      const base = this.endIsland(px, pz);
+      if (!base) continue;
+      const height = 12 + ((i * 7) % 5) * 3;
+      for (let dz = -w; dz <= w; dz++) {
+        for (let dx = -w; dx <= w; dx++) {
+          if (Math.abs(dx) === w && Math.abs(dz) === w && w > 1) continue;   // round it off
+          for (let y = base.top + 1; y <= Math.min(SY - 2, base.top + height); y++) {
+            put(px + dx, y, pz + dz, OBSIDIAN, true);
+          }
+        }
+      }
+      put(px, Math.min(SY - 1, base.top + height + 1), pz, GLOWSTONE, true);
+    }
+  }
+
   // ------------------------------------------------------------------- lighting
 
   /**
@@ -527,6 +692,7 @@ export class World {
    * -1 when the column offers nowhere, which is normal above the lava sea.
    */
   standY(x, z, clear = 3) {
+    if (this.end) return this.endStandY(x, z, clear);
     if (!this.nether) return this.surfaceY(x, z);
     const xi = Math.floor(x), zi = Math.floor(z);
     // Down from the ceiling of the open cavern — not up from the lava, and not
@@ -544,5 +710,20 @@ export class World {
       return y + 1;
     }
     return -1;              // open to the lava all the way down: a lake
+  }
+
+  /**
+   * The top of the island at this column, or -1 for the void. Unlike the
+   * overworld there is no sea floor to fall back on: an empty column in the End
+   * means there is genuinely nothing there, and saying so is the whole job.
+   */
+  endStandY(x, z, clear = 3) {
+    const xi = Math.floor(x), zi = Math.floor(z);
+    for (let y = SY - clear - 1; y > 0; y--) {
+      if (!isSolid(this.get(xi, y, zi))) continue;
+      for (let h = 1; h <= clear; h++) if (this.get(xi, y + h, zi) !== AIR) return -1;
+      return y + 1;
+    }
+    return -1;
   }
 }

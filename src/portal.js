@@ -1,5 +1,6 @@
-// Nether portals: recognising a frame, lighting it, putting it out, and building
-// the far end of the journey.
+// Portals: recognising a frame, lighting it, putting it out, and building the
+// far end of the journey. Both kinds live here — the Nether's vertical sheet of
+// obsidian, and the End's ring of twelve frames lying flat in a stronghold.
 //
 // A portal is a rectangle of air completely ringed by obsidian in a single
 // vertical plane. That one rule is the whole detector, and it is what lets a
@@ -9,8 +10,10 @@
 // in the world are the entire state, so a portal survives the chunk it is in
 // being unloaded and reloaded with no bookkeeping at all.
 
-import { AIR, PORTAL, OBSIDIAN, isSolid } from './blocks.js?v=31';
-import { SY, NETHER_SEA, NETHER_SCALE } from './world.js?v=31';
+import {
+  AIR, PORTAL, OBSIDIAN, END_PORTAL, END_FRAME, END_FRAME_EYE, isSolid,
+} from './blocks.js?v=37';
+import { SY, NETHER_SEA, NETHER_SCALE, END_SURFACE } from './world.js?v=37';
 
 // Minecraft's limits, scaled to a 64-block world: at least two wide and three
 // tall, and small enough that an ordinary cave can never qualify.
@@ -92,11 +95,38 @@ function scanFrame(world, x, y, z, axis) {
  * Strike a light against a block. Returns what happened, so the caller can tell
  * the player whether the frame was wrong or there was no frame at all.
  */
+/**
+ * Cells to try as the inside of a frame, nearest to the struck block first.
+ *
+ * Six neighbours is not enough. A player lights whichever part of the frame
+ * they happen to be pointing at, and from a corner block none of the six is the
+ * air inside — two are frame, two are ground, and the rest is the open sky
+ * outside, which scans as an unclosed frame and reports the frame as broken
+ * when it is perfectly built. Searching outwards in shells fixes that and keeps
+ * the nearest valid frame winning, so a portal built beside another one still
+ * lights the half you aimed at.
+ */
+function seedCells(x, y, z, reach) {
+  const seeds = [];
+  for (let r = 0; r <= reach; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dz = -r; dz <= r; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue;
+          seeds.push([x + dx, y + dy, z + dz]);
+        }
+      }
+    }
+  }
+  return seeds;
+}
+
 export function ignite(world, x, y, z) {
-  // The struck block itself first, then its neighbours: a player lights the
-  // obsidian at the bottom of the frame, which means the air to be filled is the
-  // cell above the one actually hit.
-  const seeds = [[x, y, z], ...SIX.map(([dx, dy, dz]) => [x + dx, y + dy, z + dz])];
+  // Reach past the immediate neighbours only when the struck block is actually
+  // part of a frame. Striking a light on anything else stays local, so a flint
+  // and steel waved at a wall cannot reach across a room and open a portal.
+  const onFrame = world.get(x, y, z) === OBSIDIAN;
+  const seeds = seedCells(x, y, z, onFrame ? 3 : 1);
   let sawAir = false;
 
   for (const [sx, sy, sz] of seeds) {
@@ -109,7 +139,7 @@ export function ignite(world, x, y, z) {
       return { lit: true, cells: frame.cells.length, axis: frame.axis };
     }
   }
-  return { lit: false, sawAir };
+  return { lit: false, sawAir, onFrame };
 }
 
 /**
@@ -242,4 +272,112 @@ function chooseSite(world, x, z) {
   }
   const py = world.nether ? NETHER_SEA + 16 : Math.floor(SY / 2);
   return { px: x, py, pz: z };
+}
+
+// ---------------------------------------------------------------- the End
+
+/**
+ * Seat an eye in a frame, and light the portal if that was the twelfth. The
+ * caller has already decided the player has an eye to spend; this only reports
+ * what happened to it.
+ */
+export function seatEye(world, x, y, z) {
+  if (world.get(x, y, z) !== END_FRAME) return { seated: false };
+  world.set(x, y, z, END_FRAME_EYE);
+  return { seated: true, lit: lightEndPortal(world, x, y, z) };
+}
+
+/**
+ * Look for a complete ring around a frame that was just filled. A portal is a
+ * 3x3 of air inside twelve frames, so only the twenty-five cells within two of
+ * this one can be its centre; testing all of them is both cheaper and clearer
+ * than working out which side of which ring the frame belongs to.
+ */
+function lightEndPortal(world, fx, fy, fz) {
+  for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      if (!completeRing(world, fx + dx, fy, fz + dz)) continue;
+      for (let iz = -1; iz <= 1; iz++) {
+        for (let ix = -1; ix <= 1; ix++) world.set(fx + dx + ix, fy, fz + dz + iz, END_PORTAL);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Twelve filled frames around a clear 3x3, corners ignored as in Minecraft. */
+function completeRing(world, cx, cy, cz) {
+  for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const ring = Math.max(Math.abs(dx), Math.abs(dz)) === 2;
+      const corner = Math.abs(dx) === 2 && Math.abs(dz) === 2;
+      const id = world.get(cx + dx, cy, cz + dz);
+      if (ring && !corner) { if (id !== END_FRAME_EYE) return false; }
+      else if (!ring && id !== AIR && id !== END_PORTAL) return false;
+    }
+  }
+  return true;
+}
+
+/** How many of the twelve are filled, for telling the player how far along they are. */
+export function ringProgress(world, fx, fy, fz) {
+  let best = 0;
+  for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      let n = 0, frames = 0;
+      for (let rz = -2; rz <= 2; rz++) {
+        for (let rx = -2; rx <= 2; rx++) {
+          const ring = Math.max(Math.abs(rx), Math.abs(rz)) === 2;
+          if (!ring || (Math.abs(rx) === 2 && Math.abs(rz) === 2)) continue;
+          const id = world.get(fx + dx + rx, fy, fz + dz + rz);
+          if (id === END_FRAME_EYE) n++;
+          if (id === END_FRAME || id === END_FRAME_EYE) frames++;
+        }
+      }
+      if (frames === 12 && n > best) best = n;
+    }
+  }
+  return best;
+}
+
+/**
+ * Where you come out in the End: on the main island near its rim, looking in at
+ * the pillars. Minecraft drops you on a platform hanging in the void and expects
+ * you to bridge across, which with no guarantee of a block in your pockets is a
+ * way to arrive and immediately fall. Standing on the island instead keeps the
+ * rule the Nether already follows — arriving is not allowed to fail.
+ */
+export function endArrival(world) {
+  for (let r = 52; r >= 8; r -= 2) {
+    for (let i = 0; i < 24; i++) {
+      const angle = (i / 24) * Math.PI * 2;
+      const x = Math.round(Math.cos(angle) * r), z = Math.round(Math.sin(angle) * r);
+      const y = world.standY(x, z, 4);
+      if (y < 2) continue;
+      return { x: x + 0.5, y, z: z + 0.5 };
+    }
+  }
+  return { x: 0.5, y: END_SURFACE + 1, z: 0.5 };
+}
+
+/**
+ * The way home, which only opens once the dragon is dead: a plinth of obsidian
+ * at the island's centre with the portal lying flat inside it, where the ring of
+ * pillars has been pointing the whole time.
+ */
+export function buildExitPortal(world) {
+  const stand = world.standY(0, 0, 4);
+  const y = stand > 2 ? stand : END_SURFACE + 1;
+
+  for (let dz = -2; dz <= 2; dz++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      // Something to stand the plinth on, in case the centre is a lip of rock.
+      if (!isSolid(world.get(dx, y - 1, dz))) world.set(dx, y - 1, dz, OBSIDIAN);
+      const ring = Math.max(Math.abs(dx), Math.abs(dz)) === 2;
+      world.set(dx, y, dz, ring ? OBSIDIAN : END_PORTAL);
+      for (let h = 1; h <= 3; h++) world.set(dx, y + h, dz, AIR);
+    }
+  }
+  return { x: 0.5, y, z: 0.5 };
 }

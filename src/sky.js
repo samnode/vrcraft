@@ -2,7 +2,7 @@
 // time-of-day value the terrain shader uses, so the world and the sky never
 // disagree about what hour it is.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
 
 const DOME_VERT = `
   varying vec3 vDir;
@@ -100,6 +100,11 @@ const DUSK_HOR  = new THREE.Color(0xe8945a);
 // for a colour this dark would mean writing 0x8c5549 and meaning a deep maroon.
 const NETHER_TOP = new THREE.Color().setRGB(0.10, 0.035, 0.030);
 const NETHER_HOR = new THREE.Color().setRGB(0.30, 0.095, 0.070);
+// The End's sky is nearly black with a cold violet cast, and barely graded: it
+// is not a sky over anything, it is the absence of one, and a visible gradient
+// would imply a horizon the place does not have.
+const END_TOP = new THREE.Color().setRGB(0.022, 0.014, 0.040);
+const END_HOR = new THREE.Color().setRGB(0.055, 0.035, 0.085);
 
 export class Sky {
   constructor(scene) {
@@ -145,17 +150,21 @@ export class Sky {
     this.clouds.renderOrder = -1;
     this.group.add(this.clouds);
 
-    this.nether = false;
+    this.kind = 'overworld';
   }
 
   /**
-   * Switch dimensions. Everything that belongs to a sky goes away in the Nether:
-   * there is a rock roof over your head down there, and a sun gliding across it
-   * would be the single most dimension-breaking thing in the game.
+   * Switch dimensions. Everything that belongs to a sky goes away outside the
+   * overworld: there is a rock roof over your head in the Nether, and a sun
+   * gliding across it would be the single most dimension-breaking thing in the
+   * game. The End keeps the stars — it is the one thing up there — but loses
+   * the sun, the moon and the weather.
    */
-  setNether(on) {
-    this.nether = on;
-    for (const obj of [this.sun, this.moon, this.stars, this.clouds]) obj.visible = !on;
+  setKind(kind) {
+    this.kind = kind;
+    const overworld = kind === 'overworld';
+    for (const obj of [this.sun, this.moon, this.clouds]) obj.visible = overworld;
+    this.stars.visible = kind !== 'nether';
   }
 
   makeDisc(texture, size) {
@@ -196,10 +205,16 @@ export class Sky {
   update(time, daylight, playerPosition, dt) {
     this.group.position.copy(playerPosition);
 
-    if (this.nether) {
-      this.uniforms.uTop.value.copy(NETHER_TOP);
-      this.uniforms.uHorizon.value.copy(NETHER_HOR);
+    if (this.kind !== 'overworld') {
+      const end = this.kind === 'end';
+      this.uniforms.uTop.value.copy(end ? END_TOP : NETHER_TOP);
+      this.uniforms.uHorizon.value.copy(end ? END_HOR : NETHER_HOR);
       this.uniforms.uGlow.value.setRGB(0, 0, 0);
+      if (end) {
+        // Fixed, faint, and never fading: there is no hour of the day here.
+        this.stars.material.opacity = 0.55;
+        this.stars.visible = true;
+      }
       return this.uniforms.uHorizon.value;
     }
 

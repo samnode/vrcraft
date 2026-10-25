@@ -1,19 +1,28 @@
 // Breaking, placing and hitting. Drives one shared highlight box; the caller
 // supplies a ray per frame (gaze on desktop, controller aim in VR).
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { raycastVoxel } from './raycast.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { raycastVoxel } from './raycast.js?v=37';
 import {
   AIR, LEAVES, SPRUCE_LEAVES, APPLE, DOOR_CLOSED, DOOR_OPEN, BOW, ARROW, BED_HEAD,
-  FLINT_STEEL, OBSIDIAN,
+  FLINT_STEEL, OBSIDIAN, ENDER_PEARL, ENDER_EYE, END_FRAME,
   block, isItem, isArmor, isLiquid, isSolid, isDoor, isBed, bedPartnerId,
   miningTime, canHarvest, attackDamage,
-} from './blocks.js?v=31';
-import { ignite, extinguish, portalAdjacent } from './portal.js?v=31';
-import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=31';
-import { sfx } from './sfx.js?v=31';
+} from './blocks.js?v=37';
+import { ignite, extinguish, portalAdjacent, seatEye, ringProgress } from './portal.js?v=37';
+import { PLAYER_WIDTH, PLAYER_HEIGHT } from './player.js?v=37';
+import { sfx } from './sfx.js?v=37';
 
 const REACH = 6;
+
+/** A compass word for a direction, which is all an eye of ender has to convey. */
+function bearing(dx, dz) {
+  // Minecraft's reckoning, which this world shares: -z is north, +x is east.
+  const names = ['north', 'north-east', 'east', 'south-east',
+                 'south', 'south-west', 'west', 'north-west'];
+  const i = Math.round(Math.atan2(dx, -dz) / (Math.PI / 4));
+  return names[((i % 8) + 8) % 8];
+}
 const PLACE_COOLDOWN = 0.18;
 const HIT_COOLDOWN = 0.45;
 
@@ -223,6 +232,10 @@ export class Interactor {
 
     if (id === FLINT_STEEL) { this.strikeLight(hit); return; }
 
+    if (id === ENDER_EYE) { this.useEye(hit); return; }
+
+    if (id === ENDER_PEARL) { this.throwPearl(); return; }
+
     if (isArmor(id)) {                                 // worn, not placed or eaten
       this.placeTimer = 0.35;
       if (this.inventory.equip(id)) {
@@ -310,10 +323,65 @@ export class Interactor {
     }
     sfx.hit();
     if (this.onNotify) {
-      this.onNotify(result.sawAir
+      // Three different failures, which want three different answers: you are
+      // on a frame that has a gap, you are on obsidian that is not a frame at
+      // all, or you are pointing at something else entirely.
+      this.onNotify(result.onFrame
         ? 'That frame is not closed: obsidian all the way round, two by three inside'
-        : 'Nothing to light here');
+        : (result.sawAir ? 'Nothing to light here — strike the obsidian frame itself'
+          : 'Nothing to light here'));
     }
+  }
+
+  /**
+   * An eye of ender does one of two things depending on what you point it at.
+   * On an empty portal frame it seats itself; anywhere else it tells you which
+   * way the nearest stronghold lies. Minecraft throws the eye into the air to
+   * say the same thing; saying it in words costs no projectile and no guesswork
+   * about which direction a tumbling object was pointing when it stopped.
+   */
+  useEye(hit) {
+    this.placeTimer = 0.35;
+    if (hit.id === END_FRAME) {
+      const result = seatEye(this.world, hit.x, hit.y, hit.z);
+      if (!result.seated) return;
+      this.inventory.consumeSelected();
+      sfx.pickup();
+      this.particles.burst(
+        new THREE.Vector3(hit.x + 0.5, hit.y + 1, hit.z + 0.5), 0x5fe0a8, 14, 1.8);
+      if (result.lit) {
+        sfx.sleep();
+        if (this.onNotify) this.onNotify('The portal opens. The End is below you.');
+      } else if (this.onNotify) {
+        const done = ringProgress(this.world, hit.x, hit.y, hit.z);
+        this.onNotify(`${done} of 12 eyes seated`);
+      }
+      return;
+    }
+
+    // Strongholds only exist in the overworld, and a bearing to one measured
+    // from anywhere else would be a number that means nothing.
+    if (this.world.kind !== 'overworld') {
+      if (this.onNotify) this.onNotify('The eye is still. There is no stronghold here.');
+      return;
+    }
+    const hold = this.world.nearestStronghold(this.player.position.x, this.player.position.z);
+    if (this.onNotify) {
+      const d = Math.round(hold.distance);
+      this.onNotify(d < 24
+        ? `The stronghold is right here: dig to ${hold.x}, ${hold.y}, ${hold.z}.`
+        : `A stronghold lies ${bearing(hold.x - this.player.position.x, hold.z - this.player.position.z)}, ${d} blocks: ${hold.x}, ${hold.z}.`);
+    }
+  }
+
+  /** Throw a pearl. Wherever it lands, you do, with a jolt for the trouble. */
+  throwPearl() {
+    this.placeTimer = 0.5;
+    if (!this.inventory.creative) this.inventory.consumeSelected();
+    const origin = this.lastRay.origin.clone();
+    const target = origin.clone().addScaledVector(this.lastRay.direction, 24);
+    this.mobs.arrows.fire(origin, target, 19, true, 'pearl');
+    this.swingPulse++;
   }
 
   /** The gaze flattened to one of the four compass steps. */

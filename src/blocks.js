@@ -26,6 +26,9 @@ export const TILES = [
   'snow', 'snow_side', 'sandstone', 'cactus_top', 'cactus_side', 'spruce_leaves',
   'netherrack', 'lava', 'soul_sand', 'quartz_ore', 'quartz_block', 'nether_brick',
   'obsidian', 'portal', 'quartz', 'flint_steel',
+  'end_stone', 'end_stone_brick', 'stone_brick', 'purpur',
+  'end_frame_top', 'end_frame_eye', 'end_frame_side', 'end_portal',
+  'dragon_egg', 'ender_pearl', 'ender_eye',
 ];
 
 const tile = {};
@@ -197,6 +200,24 @@ export const QUARTZ       = add(def(82, 'Nether Quartz', { all: tile.quartz, ite
 export const FLINT_STEEL  = add(def(83, 'Flint and Steel', { all: tile.flint_steel, item: true }));
 export const QUARTZ_BLOCK = add(def(84, 'Quartz Block', { all: tile.quartz_block, hardness: 0.8, material: MAT.STONE, requiresTier: 1 }));
 
+// ---------------------------------------------------------------- the End
+// End stone is soft, which is deliberate: the End is a place you cross rather
+// than quarry, and a hard floor would make every island a chore to bridge.
+export const END_STONE   = add(def(85, 'End Stone',  { all: tile.end_stone, hardness: 0.9, material: MAT.STONE, requiresTier: 1, varyTexture: true }));
+export const STONE_BRICK = add(def(86, 'Stone Bricks', { all: tile.stone_brick, hardness: 1.5, material: MAT.STONE, requiresTier: 1, varyTexture: true }));
+export const END_BRICK   = add(def(87, 'End Stone Bricks', { all: tile.end_stone_brick, hardness: 1.5, material: MAT.STONE, requiresTier: 1 }));
+export const PURPUR      = add(def(88, 'Purpur Block', { all: tile.purpur, hardness: 1.5, material: MAT.STONE, requiresTier: 1, varyTexture: true }));
+// The frame comes in two states so a player can see at a glance how many of the
+// twelve are still waiting for an eye. Neither is craftable: frames are found.
+export const END_FRAME     = add(def(89, 'End Portal Frame', { top: tile.end_frame_top, side: tile.end_frame_side, bottom: tile.end_frame_side, hardness: null, drop: null }));
+export const END_FRAME_EYE = add(def(90, 'End Portal Frame', { top: tile.end_frame_eye, side: tile.end_frame_side, bottom: tile.end_frame_side, hardness: null, drop: null, light: 6 }));
+// Lies flat and is fallen into rather than walked through, but is otherwise the
+// same self-lit, unbreakable sheet the Nether portal is.
+export const END_PORTAL  = add(def(91, 'End Portal', { all: tile.end_portal, hardness: null, opaque: false, solid: false, light: 13, drop: null, shape: 'portal' }));
+export const DRAGON_EGG  = add(def(92, 'Dragon Egg', { all: tile.dragon_egg, hardness: 3, opaque: false, light: 4, material: MAT.STONE, requiresTier: 1 }));
+export const ENDER_PEARL = add(def(93, 'Ender Pearl', { all: tile.ender_pearl, item: true }));
+export const ENDER_EYE   = add(def(94, 'Eye of Ender', { all: tile.ender_eye, item: true }));
+
 // Never placed from the hand or listed anywhere: it only ever appears next to a
 // BED that was just placed, and breaks with it.
 export const BED_HEAD = add(def(61, 'Bed', { all: tile.bed_item, hardness: 0.4, material: MAT.PLANT, opaque: false, shape: 'bed', use: 'bed', drop: 46, parts: BED_PARTS }));
@@ -213,7 +234,9 @@ export function isLiquid(id) { return LIQUID_LUT[id] === 1; }
 /** Water and lava part company anywhere one is survivable and the other is not. */
 export function isWater(id) { return id === WATER; }
 export function isLava(id) { return id === LAVA; }
-export function isPortal(id) { return id === PORTAL; }
+export function isPortal(id) { return id === PORTAL || id === END_PORTAL; }
+/** Either state of an End portal frame, empty or with its eye seated. */
+export function isEndFrame(id) { return id === END_FRAME || id === END_FRAME_EYE; }
 /**
  * Too tough for a blast to clear. Keeping obsidian on this list is what stops a
  * ghast's fireball from erasing the portal you arrived through.
@@ -250,14 +273,31 @@ export function attackDamage(toolId) {
   return tool ? tool.damage : 1;
 }
 
-// Every placeable block, for the creative palette.
-export const CREATIVE_PALETTE = [
-  GRASS, DIRT, STONE, SAND, COBBLE, PLANKS, LOG, LEAVES, WOOL, BRICK,
-  GLASS, GLOWSTONE, TORCH, TABLE, FURNACE, DOOR_CLOSED, LADDER, BED,
-  STONE_SLAB, WOOD_SLAB, COAL_ORE, IRON_ORE,
-  SNOW, SNOWY_GRASS, SANDSTONE, CACTUS, SPRUCE_LEAVES,
-  NETHERRACK, SOUL_SAND, NETHER_BRICK, QUARTZ_BLOCK, QUARTZ_ORE, OBSIDIAN, LAVA,
+/**
+ * The creative palette, in pages of nine.
+ *
+ * Nine is not arbitrary: it is how many the digit keys reach and how many slots
+ * fit across the HUD without shrinking them past recognising. One flat list of
+ * everything was neither — it ran half again as wide as the canvas, so the
+ * blocks at both ends were drawn off the edge and could only be reached by
+ * spinning the mouse wheel through every block in the game.
+ *
+ * The last two pages carry items rather than blocks. They are here because
+ * without them creative mode cannot reach the other two dimensions at all:
+ * nothing lights a portal, and nothing opens an End frame.
+ */
+export const CREATIVE_PAGES = [
+  { name: 'Ground', blocks: [GRASS, DIRT, STONE, COBBLE, SAND, SANDSTONE, SNOW, SNOWY_GRASS, GLASS] },
+  { name: 'Growing', blocks: [LOG, PLANKS, LEAVES, SPRUCE_LEAVES, CACTUS, WOOL, BED, DOOR_CLOSED, LADDER] },
+  { name: 'Built', blocks: [BRICK, STONE_BRICK, STONE_SLAB, WOOD_SLAB, TABLE, FURNACE, TORCH, GLOWSTONE, COAL_ORE] },
+  { name: 'Nether', blocks: [NETHERRACK, SOUL_SAND, NETHER_BRICK, QUARTZ_BLOCK, QUARTZ_ORE, OBSIDIAN, LAVA, IRON_ORE, FLINT_STEEL] },
+  { name: 'End', blocks: [END_STONE, END_BRICK, PURPUR, DRAGON_EGG, ENDER_PEARL, ENDER_EYE] },
+  { name: 'Tools', blocks: [IRON_PICK, IRON_AXE, IRON_SHOVEL, IRON_SWORD, BOW, ARROW] },
 ];
+
+// The same set as one flat list, for anything that only wants to know whether a
+// block is reachable in creative at all.
+export const CREATIVE_PALETTE = CREATIVE_PAGES.flatMap((p) => p.blocks);
 export const SURVIVAL_SLOTS = 18;
 
 export const OPAQUE_LUT = new Uint8Array(256);

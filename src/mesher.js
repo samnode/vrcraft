@@ -7,13 +7,13 @@
 // portal sheets, which get their own pass because they are self-lit and animated
 // and so cannot share a material with ordinary glass.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { SX, SY, SZ, idx } from './world.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { SX, SY, SZ, idx } from './world.js?v=37';
 import {
   AIR, block, OPAQUE_LUT, POST_LUT, SLAB_LUT, PANEL_LUT, CLIMB_LUT,
   WATER, VARY_LUT, BED_LUT, PORTAL_LUT, DOOR_OPEN, isDoor, bedPartnerId,
-} from './blocks.js?v=31';
-import { tileUV } from './textures.js?v=31';
+} from './blocks.js?v=37';
+import { tileUV } from './textures.js?v=37';
 
 // Per-direction quad corners, wound counter-clockwise seen from outside the cube.
 const FACES = [

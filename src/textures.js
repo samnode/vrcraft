@@ -1,8 +1,8 @@
 // Procedural block atlas. Everything is drawn into one canvas at load time, so the
 // project ships with no binary assets and the texture budget on Quest stays tiny.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { TILES } from './blocks.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { TILES } from './blocks.js?v=37';
 
 export const TILE_PX = 32;
 export const ATLAS_COLS = 8;
@@ -830,6 +830,140 @@ Object.assign(painters, {
     for (const [x, y, s] of [[22, 14, 2], [25, 11, 2], [20, 10, 1], [26, 16, 1]]) {
       ctx.fillRect(ox + x, oy + y, s, s);
     }
+  },
+});
+
+// ---------------------------------------------------------------- the End
+//
+// A pale, bloodless palette with no warmth anywhere in it. The Nether is lit by
+// fire and reads as hot; the End is lit by nothing in particular and has to read
+// as somewhere that was never meant for anyone, which is mostly a matter of
+// keeping every colour slightly green and slightly too light.
+
+Object.assign(painters, {
+  end_stone(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [222, 224, 170], 0.12, 110);
+    blobs(ctx, ox, oy, 'rgba(198,200,146,0.5)', 16, 3, 111);
+    blobs(ctx, ox, oy, 'rgba(240,242,196,0.55)', 10, 2, 112);
+  },
+
+  end_stone_brick(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [206, 208, 158], 0.1, 113);
+    // Smaller courses than the overworld brick, offset every other row.
+    ctx.fillStyle = 'rgba(158,160,116,0.9)';
+    for (let y = 0; y < TILE_PX; y += 8) ctx.fillRect(ox, oy + y, TILE_PX, 1);
+    for (let y = 0; y < TILE_PX; y += 8) {
+      const shift = (y / 8) % 2 ? 8 : 0;
+      for (let x = shift; x < TILE_PX; x += 16) ctx.fillRect(ox + x, oy + y, 1, 8);
+    }
+  },
+
+  stone_brick(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [124, 124, 126], 0.12, 114);
+    ctx.fillStyle = 'rgba(92,92,96,0.9)';
+    for (let y = 0; y < TILE_PX; y += 8) ctx.fillRect(ox, oy + y, TILE_PX, 1);
+    for (let y = 0; y < TILE_PX; y += 8) {
+      const shift = (y / 8) % 2 ? 8 : 0;
+      for (let x = shift; x < TILE_PX; x += 16) ctx.fillRect(ox + x, oy + y, 1, 8);
+    }
+    // A few cracked and mossy stones, because a stronghold is old.
+    blobs(ctx, ox, oy, 'rgba(96,114,88,0.35)', 5, 4, 115);
+  },
+
+  purpur(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [168, 128, 168], 0.14, 116);
+    blobs(ctx, ox, oy, 'rgba(196,160,196,0.5)', 14, 3, 117);
+    blobs(ctx, ox, oy, 'rgba(136,100,140,0.45)', 10, 2, 118);
+  },
+
+  // The portal frame: a plinth of pale stone with a socket in the top face. The
+  // socket is painted empty here; the filled frame is a separate tile, because
+  // a player has to be able to see at a glance which of the twelve are done.
+  end_frame_top(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [196, 200, 154], 0.1, 119);
+    ctx.fillStyle = 'rgba(126,130,96,0.9)';
+    ctx.fillRect(ox + 8, oy + 8, 16, 16);
+    ctx.fillStyle = 'rgba(78,82,58,0.85)';
+    ctx.fillRect(ox + 10, oy + 10, 12, 12);
+  },
+
+  end_frame_eye(ctx, ox, oy) {
+    painters.end_frame_top(ctx, ox, oy);
+    // The eye seated in the socket: a green iris with a bright catchlight.
+    ctx.fillStyle = 'rgb(96,186,138)';
+    ctx.fillRect(ox + 10, oy + 10, 12, 12);
+    ctx.fillStyle = 'rgba(52,122,94,0.9)';
+    ctx.fillRect(ox + 10, oy + 18, 12, 4);
+    ctx.fillStyle = 'rgba(206,248,226,0.95)';
+    ctx.fillRect(ox + 12, oy + 12, 4, 3);
+  },
+
+  end_frame_side(ctx, ox, oy) {
+    grainy(ctx, ox, oy, [178, 182, 138], 0.1, 120);
+    ctx.fillStyle = 'rgba(126,130,96,0.8)';
+    ctx.fillRect(ox, oy, TILE_PX, 5);              // the lip of the plinth
+    ctx.fillStyle = 'rgba(150,154,114,0.6)';
+    ctx.fillRect(ox, oy + 5, TILE_PX, 2);
+  },
+
+  end_portal(ctx, ox, oy) {
+    // Near-black with a scatter of stars. The portal shader multiplies this by
+    // a purple glow, so what comes out is a hole full of drifting violet specks
+    // rather than the solid sheet the Nether gets.
+    for (let y = 0; y < TILE_PX; y++) {
+      for (let x = 0; x < TILE_PX; x++) {
+        const n = px(x, y, 121);
+        const v = n > 0.975 ? 1 : (n > 0.945 ? 0.45 : 0);
+        const base = 14 + px(x, y, 122) * 10;
+        ctx.fillStyle = `rgba(${base + v * 230 | 0},${base * 0.7 + v * 215 | 0},${base * 1.5 + v * 240 | 0},1)`;
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+  },
+
+  dragon_egg(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    // An egg rather than a cube: the silhouette is the whole point of a trophy.
+    const cx = TILE_PX / 2;
+    for (let y = 3; y < 30; y++) {
+      const t = (y - 3) / 27;
+      const w = 4 + Math.sin(Math.pow(t, 0.75) * Math.PI) * 9;
+      for (let x = Math.round(cx - w); x < Math.round(cx + w); x++) {
+        const n = px(x, y, 123);
+        const lit = (x - cx + w) / (2 * w) < 0.35 ? 1.5 : 1;
+        const s = (22 + n * 26) * lit;
+        ctx.fillStyle = rgb(s, s * 0.55, s * 1.25);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+    ctx.fillStyle = 'rgba(206,150,236,0.75)';
+    ctx.fillRect(ox + 12, oy + 7, 3, 5);
+  },
+
+  ender_pearl(ctx, ox, oy) {
+    ctx.clearRect(ox, oy, TILE_PX, TILE_PX);
+    const cx = TILE_PX / 2, cy = TILE_PX / 2;
+    for (let y = 0; y < TILE_PX; y++) {
+      for (let x = 0; x < TILE_PX; x++) {
+        const d = Math.hypot(x - cx + 0.5, y - cy + 0.5);
+        if (d > 11) continue;
+        // Lit from the upper left, with the rim darkening into the silhouette.
+        const lit = Math.max(0, 1 - Math.hypot(x - cx + 4, y - cy + 4) / 15);
+        const n = px(x, y, 124) * 0.25;
+        const s = 46 + lit * 150 + n * 40;
+        ctx.fillStyle = rgb(s * 0.5, s, s * 0.82);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+  },
+
+  ender_eye(ctx, ox, oy) {
+    painters.ender_pearl(ctx, ox, oy);
+    // A pearl with a pupil in it, which is the only difference that matters.
+    ctx.fillStyle = 'rgba(16,26,20,0.92)';
+    ctx.fillRect(ox + 13, oy + 11, 6, 10);
+    ctx.fillStyle = 'rgba(226,255,238,0.9)';
+    ctx.fillRect(ox + 14, oy + 12, 2, 3);
   },
 });
 

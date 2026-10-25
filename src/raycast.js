@@ -1,7 +1,7 @@
 // Amanatides & Woo voxel DDA. Returns the first non-air voxel along the ray plus
 // the face normal, which is what block placement needs.
 
-import { AIR, isLiquid, isPortal } from './blocks.js?v=31';
+import { AIR, isLiquid, isPortal } from './blocks.js?v=37';
 
 /**
  * skipLiquid also skips portal sheets. Neither can be mined, placed against or

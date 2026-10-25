@@ -15,8 +15,9 @@ import {
   LEATHER_HELMET, LEATHER_CHEST, LEATHER_LEGS, LEATHER_BOOTS,
   IRON_HELMET, IRON_CHEST, IRON_LEGS, IRON_BOOTS,
   FLINT_STEEL, NETHERRACK, NETHER_BRICK, QUARTZ, QUARTZ_BLOCK,
+  GLOWSTONE, ENDER_PEARL, ENDER_EYE, END_STONE, END_BRICK, STONE_BRICK, PURPUR,
   block,
-} from './blocks.js?v=31';
+} from './blocks.js?v=37';
 
 /** needs: null (anywhere), 'table' or 'furnace' — a station within reach. */
 const r = (out, count, inputs, needs = null) => ({ out, count, inputs, needs });
@@ -71,6 +72,14 @@ export const RECIPES = [
   // is at least the right idea — something that sparks against steel.
   r(FLINT_STEEL, 1, [[IRON_INGOT, 1], [COAL, 1]], 'table'),
   r(QUARTZ_BLOCK, 1, [[QUARTZ, 4]], 'table'),
+
+  // The End. An eye costs a pearl off an enderman and a block of glowstone,
+  // which is Minecraft's progression in a single line: the stone only grows in
+  // the Nether, so the End is behind it whether you meant to go or not.
+  r(ENDER_EYE, 1, [[ENDER_PEARL, 1], [GLOWSTONE, 1]], 'table'),
+  r(STONE_BRICK, 4, [[COBBLE, 4]], 'table'),
+  r(END_BRICK, 4, [[END_STONE, 4]], 'table'),
+  r(PURPUR, 2, [[END_STONE, 2], [ENDER_PEARL, 1]], 'table'),
 
   // Smelting: a furnace plus coal for fuel.
   r(IRON_INGOT, 1, [[IRON_ORE, 1], [COAL, 1]], 'furnace'),

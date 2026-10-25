@@ -2,18 +2,19 @@
 // a DOM overlay on desktop, and a textured quad floating in front of you in VR
 // that the right controller points at.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { block } from './blocks.js?v=31';
-import { tileRect } from './textures.js?v=31';
-import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { block } from './blocks.js?v=37';
+import { tileRect } from './textures.js?v=37';
+import { RECIPES, canCraft, hasIngredients, stationAvailable, recipeLabel } from './crafting.js?v=37';
 
 const W = 1160, H = 700;
-const ROW_H = 48, ROW_GAP = 3;
-const LIST_TOP = 92, PAD = 20;
+const ROW_H = 46, ROW_GAP = 3;
+const LIST_TOP = 80, PAD = 20;
 // Four columns rather than three: the recipe list in three columns runs off the
 // bottom of the panel, and a taller panel would not fit a short window. At this
-// row pitch the four columns hold eleven rows, so there is room for forty-four
-// recipes before the layout has to change again.
+// row pitch the four columns hold twelve rows, so there is room for forty-eight
+// recipes before the layout has to change again. The font sizes are unchanged
+// from when the rows were taller; only the spacing between them has gone.
 const COLS = 4;
 
 export class CraftUI {
@@ -127,19 +128,19 @@ export class CraftUI {
       const out = block(recipe.out);
       const r = tileRect(out.faces[2]);
       ctx.globalAlpha = ok ? 1 : 0.35;
-      ctx.drawImage(this.atlas, r.x, r.y, r.w, r.h, x + 6, y + 5, 38, 38);
+      ctx.drawImage(this.atlas, r.x, r.y, r.w, r.h, x + 6, y + 5, 36, 36);
 
       const label = recipeLabel(recipe);
       ctx.textAlign = 'left';
       ctx.fillStyle = ok ? '#ffffff' : '#7d8db0';
       ctx.font = '600 15px system-ui, sans-serif';
-      ctx.fillText(label.name, x + 52, y + 21);
+      ctx.fillText(label.name, x + 50, y + 20);
 
       // Missing ingredients and absent stations are the two reasons a row is dim.
       ctx.font = '500 12px system-ui, sans-serif';
       ctx.fillStyle = !station ? '#e8a06a' : (has ? '#9db2d8' : '#c47b7b');
       const note = !station ? `needs a ${recipe.needs}` : label.inputs;
-      ctx.fillText(note, x + 52, y + 38);
+      ctx.fillText(note, x + 50, y + 37);
       ctx.globalAlpha = 1;
     });
 

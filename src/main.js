@@ -1,27 +1,29 @@
 // Entry point: renderer and XR setup, input mapping for both controllers and
 // keyboard/mouse, and the frame loop that drives every subsystem.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { VRButton } from '../vendor/three/jsm/webxr/VRButton.js?v=37';
 
-import { buildAtlas } from './textures.js?v=31';
-import { HeldItem, offHandMesh } from './held.js?v=31';
-import { DroppedItems } from './items.js?v=31';
-import { Terrain } from './terrain.js?v=31';
-import { Player } from './player.js?v=31';
-import { Inventory } from './inventory.js?v=31';
-import { Survival } from './survival.js?v=31';
-import { Mobs } from './mobs.js?v=31';
-import { Interactor } from './interact.js?v=31';
-import { Particles } from './fx.js?v=31';
-import { Hud, formatClock } from './ui.js?v=31';
-import { CraftUI } from './craftui.js?v=31';
-import { RECIPES, craft, nearbyStations } from './crafting.js?v=31';
-import { Sky } from './sky.js?v=31';
-import { block, PORTAL } from './blocks.js?v=31';
-import { sfx } from './sfx.js?v=31';
-import { SEA_LEVEL, BIOME_NAMES, DIM } from './world.js?v=31';
-import { mapCoords, findPortal, buildPortal } from './portal.js?v=31';
+import { buildAtlas } from './textures.js?v=37';
+import { HeldItem, offHandMesh } from './held.js?v=37';
+import { DroppedItems } from './items.js?v=37';
+import { Terrain } from './terrain.js?v=37';
+import { Player } from './player.js?v=37';
+import { Inventory } from './inventory.js?v=37';
+import { Survival } from './survival.js?v=37';
+import { Mobs } from './mobs.js?v=37';
+import { Interactor } from './interact.js?v=37';
+import { Particles } from './fx.js?v=37';
+import { Hud, formatClock } from './ui.js?v=37';
+import { CraftUI } from './craftui.js?v=37';
+import { RECIPES, craft, nearbyStations } from './crafting.js?v=37';
+import { Sky } from './sky.js?v=37';
+import { block, PORTAL, END_PORTAL, DRAGON_EGG } from './blocks.js?v=37';
+import { sfx } from './sfx.js?v=37';
+import { SEA_LEVEL, BIOME_NAMES, DIM } from './world.js?v=37';
+import {
+  mapCoords, findPortal, buildPortal, endArrival, buildExitPortal,
+} from './portal.js?v=37';
 
 // Continuous stick turning. Raise for faster rotation; some people find anything
 // above ~160 deg/s uncomfortable in a headset.
@@ -29,12 +31,15 @@ const TURN_SPEED = THREE.MathUtils.degToRad(120);   // radians per second at ful
 const TURN_DEADZONE = 0.15;
 // Bumped on each deploy. GitHub Pages caches assets for 10 minutes, so this is
 // how you tell at a glance whether a headset is running the build you expect.
-const BUILD = 'build 31';
+const BUILD = 'build 37';
 const VIEW_CHUNKS = 4;
 // The Nether is drawn closer in. Every column down there has a floor and a roof
 // and often a pillar between them, so a chunk carries far more geometry than a
 // landscape does, and the dense fog it is seen through hides the shorter view.
 const NETHER_CHUNKS = 3;
+// The End is mostly void, so a chunk there carries almost no geometry and the
+// view can run further out than anywhere else without costing anything.
+const END_CHUNKS = 5;
 // How long you have to stand in a portal before it takes you, and how much
 // faster that is in creative, where nobody wants to wait to go and look.
 const PORTAL_DELAY = 1.2;
@@ -105,6 +110,17 @@ function makeDimension(name, opts) {
     dimItems.drop(id, count, position);
   };
   dimMobs.onExplode = onExplode;
+  dimMobs.onBossDeath = onDragonDeath;
+  // A thrown pearl takes you to wherever it stopped. The jolt is Minecraft's
+  // and it is the whole cost of the trick.
+  dimMobs.arrows.onPearlLand = (position) => {
+    particles.burst(position, 0x3fcf9a, 18, 2.4);
+    player.position.set(position.x, position.y + 0.1, position.z);
+    player.velocity.set(0, 0, 0);
+    player.headTracked = false;
+    player.syncRig();
+    survival.damage(2, 'the jolt', { armored: false });
+  };
   return { name, terrain: dimTerrain, mobs: dimMobs, items: dimItems };
 }
 
@@ -120,9 +136,20 @@ const DIMENSIONS = {
     // a multiplier where 1.0 is an overworld surface at noon, tilted red.
     fogColor: 0x8c5549, fogNearFraction: 0.30, ambient: [0.62, 0.42, 0.40],
   }),
+  [DIM.END]: makeDimension(DIM.END, {
+    kind: DIM.END, radius: END_CHUNKS, seed: 51220831,
+    // The End does have sky light, so its surfaces are lit from above as the
+    // overworld's are — the sky is simply black. The ambient here is only for
+    // undersides and the inside of a tunnel, and it is cold rather than warm.
+    fogColor: 0x2a2440, fogNearFraction: 0.55, ambient: [0.16, 0.15, 0.24],
+  }),
 };
 
 const overworld = DIMENSIONS[DIM.OVERWORLD];
+const theEnd = DIMENSIONS[DIM.END];
+// One dragon per world, and only one ever. Killing it opens the way home, and
+// the flag is what stops a second one appearing the next time you step through.
+let dragonSlain = false;
 // Reassigned by setDimension. Everything below reads these rather than holding a
 // dimension of its own, so there is exactly one place that knows where you are.
 let dim = overworld;
@@ -190,7 +217,8 @@ function respawn() {
   player.spawn(spawn.x, spawn.z);
   if (stacks.length) {
     const at = `${Math.round(grave.x)}, ${Math.round(grave.y)}, ${Math.round(grave.z)}`;
-    const where = diedIn === DIM.NETHER ? ' in the Nether' : '';
+    const where = diedIn === DIM.OVERWORLD ? ''
+      : (diedIn === DIM.NETHER ? ' in the Nether' : ' in the End');
     survival.note(`You dropped ${stacks.length} stacks at ${at}${where}.`);
   } else {
     survival.note('Respawned at your spawn point.');
@@ -228,23 +256,38 @@ function setDimension(next) {
   interactor.setTerrain(terrain);
   interactor.mobs = mobs;
 
-  const nether = terrain.world.nether;
-  sky.setNether(nether);
+  sky.setKind(dim.name);
   // The scene lights exist for mobs and held items, which carry no baked light.
-  // In the Nether they come up off the floor rather than down from a sun.
-  sun.color.set(nether ? 0xffb27a : 0xffffff);
-  sun.position.set(0.5, nether ? -0.8 : 1, 0.3);
-  ambient.color.set(nether ? 0x8a3524 : 0xcfe3ff);
-  ambient.groundColor.set(nether ? 0x5a221a : 0x4a4436);
+  // In the Nether they come up off the floor rather than down from a sun; in
+  // the End there is no source at all, so they are flat and faintly violet.
+  const lit = DIMENSION_LIGHT[dim.name];
+  sun.color.set(lit.sun);
+  sun.position.set(0.5, lit.from, 0.3);
+  ambient.color.set(lit.ambient);
+  ambient.groundColor.set(lit.ground);
 }
 
-/** Is the player standing in a portal sheet? Ankles or chest counts. */
-function inPortal() {
+// Per-dimension settings for the two scene lights. `from` is the directional
+// light's height: positive for a sun overhead, negative for light off a floor.
+const DIMENSION_LIGHT = {
+  [DIM.OVERWORLD]: { sun: 0xffffff, from: 1,    ambient: 0xcfe3ff, ground: 0x4a4436 },
+  [DIM.NETHER]:    { sun: 0xffb27a, from: -0.8, ambient: 0x8a3524, ground: 0x5a221a },
+  [DIM.END]:       { sun: 0xd8ccf0, from: 0.7,  ambient: 0xa79cd0, ground: 0x2e2a44 },
+};
+
+/**
+ * The portal the player is standing in, or 0. Ankles or chest counts, and which
+ * kind it is decides where stepping through goes.
+ */
+function portalUnderfoot() {
   const p = player.position;
   const w = terrain.world;
   const x = Math.floor(p.x), z = Math.floor(p.z);
-  return w.get(x, Math.floor(p.y + 0.2), z) === PORTAL
-      || w.get(x, Math.floor(p.y + 1.2), z) === PORTAL;
+  for (const y of [Math.floor(p.y + 0.2), Math.floor(p.y + 1.2)]) {
+    const id = w.get(x, y, z);
+    if (id === PORTAL || id === END_PORTAL) return id;
+  }
+  return 0;
 }
 
 let portalHold = 0;
@@ -253,17 +296,22 @@ let portalHold = 0;
 let portalArmed = true;
 
 function updatePortal(dt) {
-  if (!inPortal()) {
+  const kind = portalUnderfoot();
+  if (!kind) {
     portalHold = 0;
     portalArmed = true;
     return;
   }
   if (!portalArmed) return;
   portalHold += dt;
-  if (portalHold < (inventory.creative ? PORTAL_DELAY_CREATIVE : PORTAL_DELAY)) return;
+  // An End portal takes you the moment you fall into it, as Minecraft's does:
+  // there is no standing in one, it is a hole in the floor.
+  const delay = kind === END_PORTAL ? 0.15
+    : (inventory.creative ? PORTAL_DELAY_CREATIVE : PORTAL_DELAY);
+  if (portalHold < delay) return;
   portalHold = 0;
   portalArmed = false;
-  travel();
+  if (kind === END_PORTAL) travelEnd(); else travelNether();
 }
 
 /**
@@ -273,7 +321,7 @@ function updatePortal(dt) {
  * arriving is not allowed to fail, because a player who lands inside rock or
  * falls out of the world has no way of understanding what went wrong.
  */
-function travel() {
+function travelNether() {
   const toNether = dim === overworld;
   const target = mapCoords(player.position.x, player.position.z, toNether);
   setDimension(DIMENSIONS[toNether ? DIM.NETHER : DIM.OVERWORLD]);
@@ -295,6 +343,61 @@ function travel() {
   survival.note(toNether
     ? `The Nether. ${Math.round(spot.x)}, ${Math.round(spot.z)}.`
     : `Back in the overworld. ${Math.round(spot.x)}, ${Math.round(spot.z)}.`);
+}
+
+/**
+ * Into the End and back. Unlike the Nether there is no scaling and no pairing:
+ * the End is one fixed place at fixed coordinates, you always arrive on the
+ * same island, and the way home is the exit portal rather than the one you came
+ * in by — which is why coming back puts you at your spawn point.
+ */
+function travelEnd() {
+  if (dim === theEnd) {
+    setDimension(overworld);
+    terrain.prime(spawn.x, spawn.z, 1);
+    player.spawn(spawn.x, spawn.z);
+    sfx.sleep();
+    survival.note('Home, and the dragon is dead.');
+    return;
+  }
+
+  setDimension(theEnd);
+  // The island has to exist before anything can be read off it, and the arrival
+  // search looks out as far as its rim.
+  terrain.prime(0, 0, 3);
+  const spot = endArrival(terrain.world);
+  player.position.set(spot.x, spot.y + 0.1, spot.z);
+  player.velocity.set(0, 0, 0);
+  player.headTracked = false;
+  player.syncRig();
+  terrain.prime(spot.x, spot.z, 1);
+
+  if (!dragonSlain && !mobs.boss) summonDragon();
+  sfx.sleep();
+  survival.note(dragonSlain ? 'The End. Quiet now.' : 'The End. Something is circling.');
+}
+
+/** Put the dragon on its orbit, high over the middle of the island. */
+function summonDragon() {
+  const d = mobs.spawn('dragon', 36, 52, 0);
+  if (d) d.orbit = 0;
+}
+
+/**
+ * The dragon going down is the one scripted event in the game: it opens the way
+ * home and leaves the egg behind. Both are built at the island's centre, where
+ * the ring of pillars has been pointing the whole time.
+ */
+function onDragonDeath(mob) {
+  dragonSlain = true;
+  particles.burst(mob.center, 0xc05de0, 90, 6.0);
+  particles.burst(mob.center, 0xffffff, 40, 4.0);
+  sfx.explode();
+
+  const exit = buildExitPortal(theEnd.terrain.world);
+  theEnd.terrain.world.set(Math.floor(exit.x), exit.y + 1, Math.floor(exit.z), DRAGON_EGG);
+  theEnd.terrain.prime(exit.x, exit.z, 1);
+  survival.note(`The dragon falls. A way home opens at ${Math.round(exit.x)}, ${Math.round(exit.z)}.`);
 }
 
 // ---------------------------------------------------------------- controllers
@@ -425,6 +528,10 @@ function gatherVrInput(dt) {
     if (pressed(rp, 1)) input.placing = true;                  // right grip also places
     input.jump = pressed(rp, 4);
     if (pressedOnce('b', pressed(rp, 5))) inventory.cycle(1);
+    // Clicking the right stick jumps a whole page of the creative palette.
+    // Stepping one block at a time still reaches everything, but there are
+    // forty-eight of them and a headset has no digit keys to shortcut with.
+    if (pressedOnce('rstick', pressed(rp, 3))) inventory.cyclePage(1);
 
     // While flying, the right stick's vertical axis is free for altitude.
     if (player.flying) {
@@ -535,6 +642,10 @@ window.addEventListener('keydown', (e) => {
     if (craftUI.open) setCraftingOpen(false);
     mouse.locked = false;
   }
+  // The palette is paged nine at a time, so the digits alone cannot reach it
+  // all. The brackets turn the page; the wheel still rolls through everything.
+  if (e.code === 'BracketLeft') inventory.cyclePage(-1);
+  if (e.code === 'BracketRight') inventory.cyclePage(1);
   const digit = e.code.match(/^Digit([1-9])$/);
   if (digit) inventory.select(Number(digit[1]) - 1);
 });
@@ -780,6 +891,16 @@ function frame(dt) {
   if (player.inLava) { survival.damage(dt * LAVA_DAMAGE, 'lava'); particles.burst(
     player.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 0xffa040, 2, 1.6); }
   updatePortal(dt);
+  // Falling out of the End would otherwise loop forever in creative: there is
+  // no surface below to be put back on, only more void. Survival needs no help
+  // here — the void kills you and respawning takes you home.
+  if (terrain.world.end && player.position.y < -3 && !survival.enabled) {
+    const spot = endArrival(terrain.world);
+    player.position.set(spot.x, spot.y + 0.1, spot.z);
+    player.velocity.set(0, 0, 0);
+    player.syncRig();
+    survival.note('The void let you go.');
+  }
   terrain.update(player.position);
   mobs.update(dt, player);
   interactor.update(dt, active ? aimRay() : null, input);
@@ -797,12 +918,14 @@ function frame(dt) {
       selected: inventory.selected,
       creative: inventory.creative,
       label: inventory.label(),
+      page: inventory.pageLabel,
       survival: survival.enabled,
       health: survival.health,
       hunger: survival.hunger,
       armor: inventory.armor,
       armorPoints: inventory.armorPoints(),
       messages: survival.messages,
+      boss: bossState(),
       mode: `${inventory.creative ? 'Creative' : 'Survival'}  ${fps} fps`,
       hoverSlot: pointer.hoverSlot,
       clock: formatClock(survival.time),
@@ -823,6 +946,13 @@ function frame(dt) {
     renderer.render(viewScene, viewCamera);
     renderer.autoClear = true;
   }
+}
+
+/** The boss bar's contents, or null when nothing is hunting you. */
+function bossState() {
+  const boss = mobs.boss;
+  if (!boss) return null;
+  return { name: boss.def.name, health: boss.health, max: boss.def.health };
 }
 
 /** Feeds both hands the same swing signals; only the live one is on screen. */
@@ -892,11 +1022,14 @@ function updateCraftPointer(input) {
 
 function updateSky(dt) {
   const nether = terrain.world.nether;
+  const end = terrain.world.end;
   const light = survival.daylight;
   // Under a rock roof the day/night term has nothing left to multiply, because
   // sky light is zero everywhere down there. Pinning it to one keeps the single
   // uniform honest for the things that are lit: glowstone, lava, and torches.
-  terrain.uniforms.uDayLight.value = nether ? 1 : light;
+  // The End has sky light but no sun to vary it, so the term is pinned there
+  // too — the darkness of the place is in the sky's colour, not in the hour.
+  terrain.uniforms.uDayLight.value = (nether || end) ? 1 : light;
   terrain.uniforms.uTime.value += dt;
 
   // The sky dome owns the palette now; fog blends the terrain into its horizon
@@ -905,11 +1038,12 @@ function updateSky(dt) {
   terrain.uniforms.uFogColor.value.copy(horizon);
   scene.background = null;                    // the dome covers the whole view
 
-  if (nether) {
-    // Fixed, because there is no hour of the day in the Nether. The directional
-    // light stays where setDimension put it, pointing up from the lava.
-    sun.intensity = 0.5;
-    ambient.intensity = 0.85;
+  if (nether || end) {
+    // Fixed, because neither place has an hour of the day. The directional
+    // light stays where setDimension put it: up off the lava in the Nether,
+    // and in the End a flat violet that belongs to nothing in particular.
+    sun.intensity = nether ? 0.5 : 0.55;
+    ambient.intensity = nether ? 0.85 : 0.95;
     return;
   }
   sun.intensity = 0.35 + light * 1.35;
@@ -932,7 +1066,7 @@ window.VRCRAFT = {
   get mobs() { return mobs; },
   get items() { return items; },
   get dimension() { return dim.name; },
-  setCraftingOpen, tryCraft, travel,
+  setCraftingOpen, tryCraft, travelNether, travelEnd, summonDragon,
   goTo(name) { setDimension(DIMENSIONS[name] ?? overworld); },
   get stations() { return stations; },
   // Lets the VR input mapping be exercised without a headset: hand it a fake
@@ -956,11 +1090,14 @@ window.VRCRAFT = {
       mobs: mobs.list.length,
       items: items.list.length,
       dimension: dim.name,
-      biome: terrain.world.nether ? 'Nether' : BIOME_NAMES[terrain.world.biomeAt(
-        Math.floor(player.position.x), Math.floor(player.position.z))],
+      biome: terrain.world.nether ? 'Nether' : (terrain.world.end ? 'The End'
+        : BIOME_NAMES[terrain.world.biomeAt(
+          Math.floor(player.position.x), Math.floor(player.position.z))]),
+      boss: bossState(),
+      dragonSlain,
       onGround: player.onGround,
       inLava: player.inLava,
-      inPortal: inPortal(),
+      inPortal: !!portalUnderfoot(),
       build: BUILD,
       fps,
       worstFrameMs: +worstFrameMs.toFixed(1),

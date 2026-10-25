@@ -2,15 +2,20 @@
 // single merged, vertex-coloured geometry so one mob costs one draw call —
 // important with a Quest frame budget.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
 import {
   isSolid, isLava, isBlastProof, PORKCHOP, BEEF, RAW_CHICKEN, LEATHER, FEATHER,
-  BONE, STRING, ARROW, GUNPOWDER, QUARTZ, AIR,
-} from './blocks.js?v=31';
-import { SEA_LEVEL, SY } from './world.js?v=31';
-import { rand2 } from './noise.js?v=31';
-import { sfx } from './sfx.js?v=31';
-import { mergeBoxes } from './textures.js?v=31';
+  BONE, STRING, ARROW, GUNPOWDER, QUARTZ, ENDER_PEARL, AIR,
+} from './blocks.js?v=37';
+import { SEA_LEVEL, SY } from './world.js?v=37';
+import { rand2 } from './noise.js?v=37';
+import { sfx } from './sfx.js?v=37';
+import { mergeBoxes } from './textures.js?v=37';
+
+// Scratch vectors for the boss's steering, which runs every frame and would
+// otherwise allocate two Vector3s per frame for the life of the fight.
+const TMP_A = new THREE.Vector3();
+const TMP_B = new THREE.Vector3();
 
 const PIG = () => mergeBoxes([
   { size: [0.62, 0.56, 0.95], pos: [0, 0.58, 0],      color: 0xeea6a0 },  // body
@@ -137,11 +142,67 @@ const GHAST = () => mergeBoxes([
   ...ghastTentacles(),
 ]);
 
+// Tall, thin, and almost entirely silhouette. The limbs are deliberately longer
+// than any proportion that makes sense, because an enderman's whole effect is
+// being the wrong shape for a person.
+const ENDERMAN = () => mergeBoxes([
+  { size: [0.42, 0.72, 0.26], pos: [0, 1.74, 0],         color: 0x15131a },
+  { size: [0.44, 0.44, 0.44], pos: [0, 2.36, 0],         color: 0x1b1822 },
+  { size: [0.12, 0.11, 0.05], pos: [-0.12, 2.42, -0.22], color: 0xd98bff },  // eyes
+  { size: [0.12, 0.11, 0.05], pos: [0.12, 2.42, -0.22],  color: 0xd98bff },
+  { size: [0.12, 1.12, 0.12], pos: [-0.30, 1.62, 0],     color: 0x15131a },  // arms
+  { size: [0.12, 1.12, 0.12], pos: [0.30, 1.62, 0],      color: 0x15131a },
+  { size: [0.13, 1.38, 0.13], pos: [-0.12, 0.69, 0],     color: 0x15131a },  // legs
+  { size: [0.13, 1.38, 0.13], pos: [0.12, 0.69, 0],      color: 0x15131a },
+]);
+
+/** A tapering run of boxes, used for both the dragon's neck and its tail. */
+function dragonSpine(from, to, segments, size, color) {
+  const out = [];
+  for (let i = 0; i < segments; i++) {
+    const t = i / (segments - 1);
+    const s = size * (1 - t * 0.62);
+    out.push({
+      size: [s, s, (to - from) / segments + 0.08],
+      pos: [0, 2.0 + Math.sin(t * 0.9) * 0.25, from + (to - from) * t],
+      color,
+    });
+  }
+  return out;
+}
+
+// The dragon is built facing -z like every other mob here, so the head is at
+// negative z and the tail runs back behind it. Wings are flat slabs rather than
+// anything hinged: the geometry is merged and cannot articulate, so the shape
+// has to carry the whole impression on its own.
+// Lighter than a black dragon has any right to be. The End's sky is nearly
+// black and its scene lights are faint, so a model painted the colour the thing
+// actually is disappears into the background entirely.
+const DRAGON = () => mergeBoxes([
+  { size: [1.70, 1.30, 2.60], pos: [0, 2.0, 0],        color: 0x342c4c },   // body
+  ...dragonSpine(-1.4, -3.6, 4, 0.85, 0x3b3254),                            // neck
+  { size: [0.90, 0.80, 1.20], pos: [0, 2.18, -4.20],   color: 0x443a60 },   // head
+  { size: [0.74, 0.26, 1.00], pos: [0, 1.76, -4.34],   color: 0x2b2440 },   // jaw
+  { size: [0.18, 0.17, 0.06], pos: [-0.26, 2.40, -4.74], color: 0xe79aff }, // eyes
+  { size: [0.18, 0.17, 0.06], pos: [0.26, 2.40, -4.74],  color: 0xe79aff },
+  { size: [0.14, 0.42, 0.14], pos: [-0.30, 2.66, -3.86], color: 0x241e36 }, // horns
+  { size: [0.14, 0.42, 0.14], pos: [0.30, 2.66, -3.86],  color: 0x241e36 },
+  ...dragonSpine(1.4, 5.6, 5, 0.80, 0x3b3254),                              // tail
+  { size: [4.60, 0.16, 1.90], pos: [-2.90, 2.55, 0.10], color: 0x4a3f6a },  // wings
+  { size: [4.60, 0.16, 1.90], pos: [2.90, 2.55, 0.10],  color: 0x4a3f6a },
+  { size: [1.30, 0.14, 1.10], pos: [-4.70, 2.42, 0.60], color: 0x5c4f82 },  // wing tips
+  { size: [1.30, 0.14, 1.10], pos: [4.70, 2.42, 0.60],  color: 0x5c4f82 },
+  { size: [0.30, 0.70, 0.30], pos: [-0.55, 1.20, 0.60], color: 0x2b2440 },  // legs
+  { size: [0.30, 0.70, 0.30], pos: [0.55, 1.20, 0.60],  color: 0x2b2440 },
+]);
+
 /**
  * drops: [itemId, chance, max] rolled on death.
  * ranged mobs keep their distance and shoot; 'explode' mobs run in and detonate.
  * `neutral` mobs are hostile only once provoked, `floats` ones ignore gravity and
- * steer in three dimensions, and `fireproof` ones can stand in lava.
+ * steer in three dimensions, and `fireproof` ones can stand in lava. `stared`
+ * mobs count being looked at as provocation, and a `boss` flies its own pattern
+ * and announces itself on the HUD.
  */
 const TYPES = {
   pig:      { build: PIG,      width: 0.9, height: 0.9, speed: 1.15, health: 10, hostile: false,
@@ -169,6 +230,14 @@ const TYPES = {
   ghast:    { build: GHAST,    width: 1.8, height: 2.4, speed: 1.2,  health: 10, hostile: true,
               floats: true, fireball: true, fireproof: true, nether: true,
               drops: [[GUNPOWDER, 0.9, 2]] },
+  // The End's two. An enderman is provoked by being looked at, which is the one
+  // thing everybody knows about them, and blinks away rather than flinching.
+  enderman: { build: ENDERMAN, width: 0.6, height: 2.9, speed: 2.4,  health: 20, hostile: true,
+              neutral: true, stared: true, blinks: true, attack: 5,
+              drops: [[ENDER_PEARL, 0.85, 2]] },
+  dragon:   { build: DRAGON,   width: 4.0, height: 3.0, speed: 7.0,  health: 180, hostile: true,
+              boss: true, floats: true, noclip: true, fireproof: true, attack: 8,
+              name: 'Ender Dragon', altitude: 52, drops: [] },
 };
 
 class Mob {
@@ -189,6 +258,11 @@ class Mob {
     this.fuse = 0;              // creepers only: counts up once you are close
     this.provoked = false;      // neutral mobs only: set when something hits them
     this.hover = position.y;    // floating mobs only: the altitude being sought
+    this.pitch = 0;             // bosses only: nose-down angle while diving
+    this.orbit = Math.random() * Math.PI * 2;
+    this.phaseTimer = 6;        // counts down to the next change of mind
+    this.breathTimer = 3;
+    this.diving = false;
   }
 
   get center() {
@@ -219,8 +293,10 @@ export class Mobs {
     for (const [name, def] of Object.entries(TYPES)) this.geometries[name] = def.build();
 
     this.spawnTimer = 2;
+    this.gaze = null;              // the player's flattened look direction
     this.onDrop = null;            // (blockId, count, position) => void
     this.onExplode = null;         // (position, radius) => void
+    this.onBossDeath = null;       // (mob) => void
     this.arrows = new Arrows(scene, world);
   }
 
@@ -240,6 +316,9 @@ export class Mobs {
   }
 
   update(dt, player) {
+    // Cached once a frame rather than per mob: every enderman asks the same
+    // question about where the player is looking.
+    this.gaze = player.headingBasis().fwd;
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 3;
@@ -257,7 +336,9 @@ export class Mobs {
 
     // Retire the dead and anything that wandered out of the loaded world.
     this.list = this.list.filter((mob) => {
-      const far = mob.position.distanceTo(playerFeet) > 80;
+      // A boss is never retired for being far away: it is the reason you came,
+      // and letting it despawn mid-flight would quietly end the fight.
+      const far = !mob.def.boss && mob.position.distanceTo(playerFeet) > 80;
       if (!mob.dead && !far) return true;
       this.group.remove(mob.mesh);
       return false;
@@ -278,6 +359,19 @@ export class Mobs {
     // Floating mobs steer vertically as part of thinking rather than falling,
     // because an altitude they are holding is a decision, not physics.
     if (mob.def.floats) this.steerHover(mob);
+
+    if (mob.def.boss) { this.dragonThink(dt, mob, playerFeet); return; }
+
+    // Being looked at counts as provocation. The test is generous in distance
+    // and tight in angle: you have to be pointing at it, not merely facing the
+    // half of the world it happens to be standing in.
+    if (mob.def.stared && !mob.provoked && this.gaze && dist > 1.5 && dist < 26) {
+      const nx = toPlayer.x / dist, nz = toPlayer.z / dist;
+      if (-(nx * this.gaze.x + nz * this.gaze.z) > 0.985) {
+        mob.provoked = true;
+        sfx.fuse();
+      }
+    }
 
     // A neutral mob is hostile only once something has hit it.
     const angry = mob.def.hostile && (!mob.def.neutral || mob.provoked);
@@ -336,6 +430,8 @@ export class Mobs {
     mob.wanderTimer -= dt;
     if (mob.wanderTimer <= 0) {
       mob.wanderTimer = 2 + Math.random() * 4;
+      // An idle enderman relocates rather than strolls, now and then.
+      if (mob.def.blinks && Math.random() < 0.25) { this.blink(mob); return; }
       if (Math.random() < 0.35) {
         mob.wander.set(0, 0);                       // idle
       } else {
@@ -362,6 +458,79 @@ export class Mobs {
     mob.velocity.y = THREE.MathUtils.clamp((mob.hover - mob.position.y) * 0.9, -1.6, 1.6);
   }
 
+  /**
+   * The dragon alternates between orbiting the island and diving at you. The
+   * orbit is what makes it findable and shootable; the dive is what makes it a
+   * fight. Nothing here consults the terrain — it flies through the pillars
+   * rather than around them, because a boss wedged in a column is worse than a
+   * boss that clips one.
+   */
+  dragonThink(dt, mob, playerFeet) {
+    mob.attackCooldown = Math.max(0, mob.attackCooldown - dt);
+    mob.hurtFlash = Math.max(0, mob.hurtFlash - dt * 3);
+    mob.breathTimer -= dt;
+    mob.phaseTimer -= dt;
+    if (mob.phaseTimer <= 0) {
+      mob.diving = !mob.diving;
+      mob.phaseTimer = mob.diving ? 5 : 8;
+    }
+
+    const hunting = this.survival.enabled && !this.survival.dead;
+    let target;
+    if (mob.diving && hunting) {
+      target = TMP_A.copy(playerFeet).add(TMP_B.set(0, 1.4, 0));
+    } else {
+      // Orbit the centre of the island, which is where the pillars point.
+      mob.orbit += dt * 0.42;
+      target = TMP_A.set(
+        Math.cos(mob.orbit) * 36,
+        mob.def.altitude,
+        Math.sin(mob.orbit) * 36,
+      );
+    }
+
+    const to = TMP_B.copy(target).sub(mob.position);
+    const d = to.length();
+    if (d > 0.001) to.multiplyScalar(1 / d);
+    const speed = mob.diving ? mob.def.speed * 1.5 : mob.def.speed;
+    mob.velocity.copy(to).multiplyScalar(Math.min(speed, d / Math.max(dt, 1e-3)));
+    mob.yaw = Math.atan2(to.x, to.z);
+    mob.pitch = Math.max(-0.7, Math.min(0.7, -to.y));
+
+    const reach = playerFeet.distanceTo(mob.position);
+    if (hunting && reach < 4.5 && mob.attackCooldown === 0) {
+      mob.attackCooldown = 1.3;
+      this.survival.damage(mob.def.attack, 'the dragon');
+    }
+    // Breath, only while it is on the wing: diving and breathing at once leaves
+    // nowhere to stand, and the orbit is the half of the cycle you fight back in.
+    if (hunting && !mob.diving && mob.breathTimer <= 0 && reach < 40) {
+      mob.breathTimer = 3.4;
+      this.arrows.fire(mob.center, playerFeet.clone().setY(playerFeet.y + 1.0), 16, false, 'fireball');
+    }
+  }
+
+  /**
+   * Jump somewhere else nearby — what an enderman does instead of flinching.
+   * Returns false if there was nowhere to go, in which case it simply stays.
+   */
+  blink(mob) {
+    const from = mob.position.clone();
+    for (let i = 0; i < 16; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 5 + Math.random() * 11;
+      const x = Math.floor(from.x + Math.cos(angle) * r);
+      const z = Math.floor(from.z + Math.sin(angle) * r);
+      const y = this.world.standY(x, z, 3);
+      if (y < 1) continue;
+      mob.position.set(x + 0.5, y, z + 0.5);
+      mob.velocity.set(0, 0, 0);
+      if (!this.collides(mob)) return true;
+    }
+    mob.position.copy(from);
+    return false;
+  }
+
   /** Is any part of this mob standing in lava? */
   inLava(mob) {
     const x = Math.floor(mob.position.x), z = Math.floor(mob.position.z);
@@ -371,6 +540,11 @@ export class Mobs {
 
   physics(dt, mob) {
     dt = Math.min(dt, 0.05);
+
+    if (mob.def.noclip) {
+      mob.position.addScaledVector(mob.velocity, dt);
+      return;
+    }
 
     if (mob.def.floats) {
       // No gravity and no ground: it moves on all three axes and simply stops
@@ -456,6 +630,12 @@ export class Mobs {
     mob.mesh.rotation.z = walking ? Math.sin(mob.bob) * 0.05 : 0;
     // A floater sways instead, on a slow cycle that never quite repeats.
     if (mob.def.floats) mob.mesh.position.y += Math.sin(mob.bob * 0.35) * 0.12;
+    if (mob.def.boss) {
+      // Pitch into the dive and bank through the turn. The geometry is merged
+      // and cannot flap, so the whole impression of flight is in these two.
+      mob.mesh.rotation.x = mob.pitch;
+      mob.mesh.rotation.z = Math.sin(mob.bob * 0.5) * 0.14 - mob.velocity.y * 0.03;
+    }
     // A creeper about to go off blinks, which is the only warning you get.
     const priming = mob.fuse > 0 && Math.sin(mob.fuse * 22) > 0;
     mob.mesh.material = (mob.hurtFlash > 0 || priming) ? this.hurtMaterial : this.material;
@@ -474,9 +654,13 @@ export class Mobs {
         if (other.position.distanceTo(mob.position) < 16) other.provoked = true;
       }
     }
+    // An enderman mostly answers a hit by not being there any more.
+    if (mob.def.blinks && mob.health > 0 && Math.random() < 0.6) this.blink(mob);
+
     if (mob.health <= 0 && !mob.dead) {
       mob.dead = true;
       this.rollDrops(mob);
+      if (mob.def.boss && this.onBossDeath) this.onBossDeath(mob);
     }
   }
 
@@ -515,6 +699,11 @@ export class Mobs {
     sfx.explode();
   }
 
+  /** The living boss, if there is one. The HUD asks once a frame. */
+  get boss() {
+    return this.list.find((m) => m.def.boss && !m.dead) || null;
+  }
+
   /** First mob whose hit box the ray crosses, within maxDistance. */
   pick(origin, direction, maxDistance = 4) {
     let best = null, bestT = maxDistance;
@@ -531,6 +720,7 @@ export class Mobs {
 
   tryNaturalSpawn(player) {
     if (this.world.nether) return this.tryNetherSpawn(player);
+    if (this.world.end) return this.tryEndSpawn(player);
     const night = this.survival.isNight;
     const passive = this.list.filter((m) => !m.def.hostile && !m.dead).length;
     const hostile = this.list.filter((m) => m.def.hostile && !m.dead).length;
@@ -562,6 +752,26 @@ export class Mobs {
   }
 
   /**
+   * The End has nothing living in it but endermen, and they are everywhere. No
+   * night to wait for either: the sky is already black.
+   */
+  tryEndSpawn(player) {
+    if (this.list.filter((m) => !m.dead && !m.def.boss).length >= 7) return;
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 12 + Math.random() * 18;
+      const x = Math.floor(player.position.x + Math.cos(angle) * r);
+      const z = Math.floor(player.position.z + Math.sin(angle) * r);
+      const y = this.world.standY(x, z, 4);
+      if (y < 2) continue;                       // the void, which holds nothing
+      const mob = this.spawn('enderman', x + 0.5, y, z + 0.5);
+      if (mob && this.collides(mob)) mob.dead = true;
+      return;
+    }
+  }
+
+  /**
    * The Nether has no night to wait for and no sky to be exposed to, so it
    * populates whenever there is room. standY does the work of finding ground,
    * since the top of a column down there is the underside of the roof.
@@ -587,9 +797,10 @@ export class Mobs {
 }
 
 /**
- * Arrows and ghast fireballs. A small pool of boxes with ballistic motion; they
- * stick in nothing, they just hit and vanish. A fireball differs in three ways
- * and no more: it flies flat, it is slower, and arriving makes a crater.
+ * Arrows, ghast fireballs and thrown ender pearls. A small pool of boxes with
+ * ballistic motion; they stick in nothing, they just hit and vanish. A fireball
+ * differs in three ways and no more — it flies flat, it is slower, and arriving
+ * makes a crater — and a pearl in one: wherever it lands, you do.
  */
 class Arrows {
   constructor(scene, world) {
@@ -600,6 +811,11 @@ class Arrows {
     this.geometry = mergeBoxes([
       { size: [0.06, 0.06, 0.5], pos: [0, 0, 0], color: 0x8a6636 },
       { size: [0.09, 0.09, 0.12], pos: [0, 0, -0.28], color: 0xd8d8dc },
+    ]);
+    this.onPearlLand = null;       // (position) => void
+    this.pearlGeometry = mergeBoxes([
+      { size: [0.22, 0.22, 0.22], pos: [0, 0, 0], color: 0x3fcf9a },
+      { size: [0.26, 0.12, 0.12], pos: [0, 0, 0], color: 0x7ef0c4 },
     ]);
     this.fireballGeometry = mergeBoxes([
       { size: [0.44, 0.44, 0.44], pos: [0, 0, 0], color: 0xffb648 },
@@ -612,6 +828,7 @@ class Arrows {
   /** Lobs a projectile from `from` towards `to`, with a little lift for the drop. */
   fire(from, to, speed, fromPlayer = false, kind = 'arrow') {
     const fireball = kind === 'fireball';
+    const pearl = kind === 'pearl';
     const dir = new THREE.Vector3().subVectors(to, from);
     const dist = dir.length();
     dir.normalize();
@@ -622,7 +839,9 @@ class Arrows {
       dir.normalize();
     }
 
-    const mesh = new THREE.Mesh(fireball ? this.fireballGeometry : this.geometry, this.material);
+    const geometry = fireball ? this.fireballGeometry
+      : (pearl ? this.pearlGeometry : this.geometry);
+    const mesh = new THREE.Mesh(geometry, this.material);
     this.group.add(mesh);
     this.list.push({
       position: from.clone(),
@@ -630,6 +849,7 @@ class Arrows {
       life: fireball ? 6 : 4,
       fromPlayer,
       fireball,
+      pearl,
       mesh,
     });
     sfx.shoot();
@@ -640,6 +860,8 @@ class Arrows {
     for (const a of this.list) {
       a.life -= step;
       if (!a.fireball) a.velocity.y -= 14 * step;
+      // A pearl that falls out of the world takes nobody with it.
+      if (a.pearl && a.position.y < -2) { a.life = 0; continue; }
       a.position.addScaledVector(a.velocity, step);
 
       a.mesh.position.copy(a.position);
@@ -650,8 +872,15 @@ class Arrows {
         Math.floor(a.position.x), Math.floor(a.position.y), Math.floor(a.position.z)))) {
         a.life = 0;
         if (a.fireball) mobs.blast(a.position.clone(), 2.0, 'a fireball');
+        // Landing is the point of a pearl, so it reports where, having first
+        // backed up along its own path to the last cell that was not solid.
+        if (a.pearl && this.onPearlLand) {
+          this.onPearlLand(a.position.clone().addScaledVector(a.velocity, -step * 1.2));
+        }
         continue;
       }
+
+      if (a.pearl) continue;              // a pearl hits the ground, not a mob
 
       if (a.fromPlayer) {
         const hit = mobs.list.find((m) => !m.dead && m.containsPoint(a.position));

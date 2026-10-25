@@ -57,8 +57,13 @@ Pick **creative** or **survival** with the mode button on the start screen, befo
 you enter. A headset session has no web page to click, so choosing up front is the
 only way to start a run in survival; on desktop `C` swaps at any time.
 
-- **Creative** — the whole 13-block palette with unlimited counts, flight, no damage.
-- **Survival** — nine empty slots you fill by mining, real stack counts, health,
+- **Creative** — the whole palette with unlimited counts, flight, no damage. It
+  runs to 48 entries now, so it is dealt out in six named pages of nine: `[` and
+  `]` turn the page, `1`–`9` pick within it, and the wheel rolls through the lot.
+  The last two pages carry items rather than blocks, because without flint and
+  steel and an eye of ender creative mode cannot reach the other two dimensions
+  at all.
+- **Survival** — eighteen empty slots you fill by mining, real stack counts, health,
   hunger, fall damage, hostile zombies after dark, and no flying.
 
 ## Mobs
@@ -145,8 +150,11 @@ steel costs an iron ingot and a lump of coal, which is the one recipe here that
 departs from Minecraft: there is no gravel to knap flint out of, so the striker
 is coal, which is at least the right idea.
 
-Strike the frame and the air inside turns to a sheet of drifting purple. Stand in
-it for a moment and you are through.
+Strike any part of the frame — a corner counts — and the air inside turns to a
+sheet of drifting purple. Stand in it for a moment and you are through.
+
+In creative you do not have to craft the striker: flint and steel sits on the
+Nether page of the palette, next to the obsidian.
 
 Nothing about a portal is recorded anywhere. It is recognised rather than
 remembered: a rectangle of air completely ringed by obsidian in one vertical
@@ -267,6 +275,7 @@ Tools matter, exactly as they do in Minecraft:
 | Climb a ladder | `A` / left stick click | `Space` / `Ctrl` |
 | Pick a block | Point at your wrist panel, pull the trigger | `1`–`9` |
 | Next / previous block | `B` / `X` | Scroll wheel |
+| Next palette page (creative) | Right stick click | `]` / `[` |
 | Toggle flight (creative) | `Y` | `F` |
 | Fly up / down | `A` / right stick down | `Space` / `Ctrl` |
 | Creative ↔ survival | Choose on the start screen | `C` |
@@ -292,7 +301,7 @@ is pushed back rather than letting your head pass through the blocks.
   humidity. Deserts lay sand over sandstone and grow cacti, the taiga is snow and
   stepped conifers, and mountains change with altitude rather than climate: grass
   at the foot, bare rock higher, snow on the caps.
-- **Building** — 34 placeable blocks, every one reachable from the creative
+- **Building** — 41 placeable blocks, every one reachable from the creative
   palette, including torches, crafting tables and furnaces. Breaking respects
   hardness and tools, drops the right item, and refuses any placement that would
   seal you inside a block. Get wedged anyway — by switching flight off inside

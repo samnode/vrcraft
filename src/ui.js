@@ -1,10 +1,10 @@
 // One canvas HUD, drawn once per frame and shown two ways: as a CSS overlay on
 // desktop, and as a texture on a wrist panel in VR (where DOM is invisible).
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { block, ARMOR_SLOTS } from './blocks.js?v=31';
-import { tileRect } from './textures.js?v=31';
-import { MAX_HEALTH, MAX_HUNGER } from './survival.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { block, ARMOR_SLOTS } from './blocks.js?v=37';
+import { tileRect } from './textures.js?v=37';
+import { MAX_HEALTH, MAX_HUNGER } from './survival.js?v=37';
 
 const W = 768, H = 300;
 const SLOT = 54, SLOT_GAP = 6;
@@ -58,30 +58,61 @@ export class Hud {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, W, H);
 
-    this.drawMessages(ctx, state.messages);
+    // The boss bar takes the top of the panel and the messages move down under
+    // it, rather than the two drawing over each other in the one fight where
+    // both are guaranteed to be saying something.
+    if (state.boss) this.drawBoss(ctx, state.boss);
+    this.drawMessages(ctx, state.messages, state.boss ? 28 : 0);
     if (state.survival) {
       this.drawBars(ctx, state.health, state.hunger);
       // Like Minecraft, the armour row only appears once you have some.
       if (state.armorPoints > 0) this.drawArmor(ctx, state.armorPoints, state.armor);
     }
-    this.drawHotbar(ctx, state.slots, state.selected, state.creative, state.hoverSlot);
+    this.drawHotbar(ctx, state.slots, state.selected, state.creative, state.hoverSlot, state.page);
     this.drawFooter(ctx, state);
 
     this.texture.needsUpdate = true;
   }
 
-  drawMessages(ctx, messages = []) {
+  drawMessages(ctx, messages = [], top = 0) {
     ctx.font = '600 19px system-ui, sans-serif';
     ctx.textAlign = 'center';
     messages.slice(-3).forEach((m, i) => {
       ctx.globalAlpha = Math.min(1, m.t);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       const w = ctx.measureText(m.text).width + 18;
-      ctx.fillRect(W / 2 - w / 2, 4 + i * 26, w, 23);
+      ctx.fillRect(W / 2 - w / 2, top + 4 + i * 26, w, 23);
       ctx.fillStyle = '#fff';
-      ctx.fillText(m.text, W / 2, 21 + i * 26);
+      ctx.fillText(m.text, W / 2, top + 21 + i * 26);
     });
     ctx.globalAlpha = 1;
+  }
+
+  /**
+   * A boss bar, shown only while one is alive and in the same world as you. It
+   * sits under the message stack rather than at the top of the frame, because
+   * in VR the top of this canvas is the far edge of a panel on your wrist and
+   * nothing there gets read in a fight.
+   */
+  drawBoss(ctx, boss) {
+    const w = 460, h = 20, x = (W - w) / 2, y = 5;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
+    ctx.fillStyle = 'rgba(58,32,76,0.95)';
+    ctx.fillRect(x, y, w, h);
+    const frac = Math.max(0, Math.min(1, boss.health / boss.max));
+    ctx.fillStyle = '#c05de0';
+    ctx.fillRect(x, y, w * frac, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(x, y, w * frac, 3);
+    // The name sits inside the bar rather than above it: this canvas is a panel
+    // on your wrist in VR, and every row of it spent is a row off the hotbar.
+    ctx.font = '700 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(boss.name, W / 2 + 1, y + 15);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(boss.name, W / 2, y + 14);
   }
 
   drawBars(ctx, health, hunger) {
@@ -159,9 +190,18 @@ export class Hud {
    * Lays the palette out in up to two rows, so a 13-block creative palette and a
    * 9-slot survival bar both fit without changing the panel's shape.
    */
-  drawHotbar(ctx, slots, selected, creative, hoverSlot) {
+  drawHotbar(ctx, slots, selected, creative, hoverSlot, page = '') {
     const perRow = slots.length <= 9 ? slots.length : Math.ceil(slots.length / 2);
     this.slotRects = [];
+
+    // Which page this row is, written over the row it belongs to. Without it
+    // the brackets are a control nobody would guess they had.
+    if (page) {
+      ctx.font = '600 13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillText(`[  ${page}  ]`, W / 2, HOTBAR_TOP - 9);
+    }
 
     slots.forEach((slot, i) => {
       const row = Math.floor(i / perRow);

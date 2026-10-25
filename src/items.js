@@ -10,11 +10,11 @@
 // loaded again. Without that, dying and respawning somewhere else would drop
 // your whole inventory through the floor of an unloaded world.
 
-import * as THREE from '../vendor/three/three.module.js?v=31';
-import { block, isPlaceable, isSolid } from './blocks.js?v=31';
-import { SX, SZ, chunkKey } from './world.js?v=31';
-import { blockCubeGeometry, iconGeometry } from './textures.js?v=31';
-import { sfx } from './sfx.js?v=31';
+import * as THREE from '../vendor/three/three.module.js?v=37';
+import { block, isPlaceable, isSolid } from './blocks.js?v=37';
+import { SX, SZ, chunkKey } from './world.js?v=37';
+import { blockCubeGeometry, iconGeometry } from './textures.js?v=37';
+import { sfx } from './sfx.js?v=37';
 
 const GRAVITY = 22;
 const SIZE = 0.26;                // the cube's edge, in blocks
